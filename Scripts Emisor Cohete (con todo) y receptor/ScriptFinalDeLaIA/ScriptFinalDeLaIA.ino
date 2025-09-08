@@ -417,7 +417,7 @@ void setup() {
 
   #if IMUConectada
     Serial.println("Test 2: Giróscopo");
-    if(!gyroscope.begin(, 0x69)){
+    if(!gyroscope.begin()){
       fallo[1] = true; // Usamos el nuevo espacio en el array
     }
   #endif
