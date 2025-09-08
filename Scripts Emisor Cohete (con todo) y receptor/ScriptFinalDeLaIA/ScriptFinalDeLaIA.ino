@@ -7,6 +7,9 @@
 //#include <LoRa.h> Uso la librería RadioLib
 #include <RadioLib.h>
 #include <Adafruit_LSM303_U.h>
+#include <Adafruit_L3GD20_U.h>//Librería del giróscopo
+#include <Adafruit_Sensor_Calibration.h> // Puede que la necesites para el magnetómetro
+#include <Adafruit_AHRS.h>             // <-- NUEVA LIBRERÍA DE FUSIÓN
 
 //Sensores de SPI
 //Lora, MicroSD
@@ -74,10 +77,58 @@ MISO pin 12
 GND GND 
 */
 
+// --- LLAVE MAESTRA PARA DEBUG ---
+// Ponlo en 'true' para activar los mensajes por Serial durante las pruebas.
+// Ponlo en 'false' para compilar el código de vuelo final sin NINGÚN mensaje.
+#define DEBUG_MODE true
+
+// --- MACROS DE DEPURACIÓN ---
+// Si DEBUG_MODE es true, estas macros usarán Serial.print.
+// Si es false, el compilador las eliminará por completo.
+#if DEBUG_MODE
+  #define D_PRINT(...)    Serial.print(__VA_ARGS__)
+  #define D_PRINTLN(...)  Serial.println(__VA_ARGS__)
+#else
+  #define D_PRINT(...)
+  #define D_PRINTLN(...)
+#endif
+
+// --- DEFINICIONES PARA EL DESPLIEGUE ---
+#define DEPLOYMENT_PIN 2 // Este pin hay que elegirlo para el despliegue del paracaídas, de momento uso el pin 2 que lo tengo libre
+
 //Configuración del acelerómetro
 #if IMUConectada
   Adafruit_LSM303_Accel_Unified accel = Adafruit_LSM303_Accel_Unified(54321);
+  Adafruit_L3GD20_Unified gyroscope = Adafruit_L3GD20_Unified(20);
+  Adafruit_LSM303_Mag_Unified mag = Adafruit_LSM303_Mag_Unified(12345);
 #endif
+
+struct TelemetryData {
+  
+  float hdop;
+  uint8_t hour;
+  uint8_t minute;
+  uint8_t second;
+  double latitude;
+  double longitude;
+  float speed_kmph;
+  float altitude_gps;
+  float pressure_hpa;
+  float altitude_bar;
+  float temperature;
+  float acc_x;
+  float acc_y;
+  float acc_z;
+  float gyro_x, gyro_y, gyro_z;
+  float mag_x, mag_y, mag_z;
+  float roll, pitch, yaw;
+};
+//Cambiar a UTF-8?
+
+// Creamos una instancia global de la estructura para llenarla en el loop
+TelemetryData flightDataPacket;
+
+Adafruit_Mahony filter;
 
 //Meter acelerómetro
 TinyGPSPlus gps;
@@ -101,52 +152,14 @@ void IRAM_ATTR onTxDone() {
 
 // Definimos la ESTRUCTURA para los datos de telemetría reales.
 // Debe ser idéntica en el emisor y el receptor.
-struct TelemetryData {
-  //uint8_t testCero;
-  float hdop;
-  uint8_t hour;
-  uint8_t minute;
-  uint8_t second;
-  double latitude;
-  double longitude;
-  float speed_kmph;
-  float altitude_gps;
-  float pressure_hpa;
-  float altitude_bar;
-  float temperature;
-  float acc_x;
-  float acc_y;
-  float acc_z;
-  uint8_t tamanoPaquete;
-};
-//Cambiar a UTF-8?
 
-// Creamos una instancia global de la estructura para llenarla en el loop
-TelemetryData flightDataPacket;
 
 // Creamos la instancia del objeto de radio usando tus pines definidos
 // La firma es (CS, IRQ/DIO0, RST)
 SX1278 radio = new Module(LoRa_CS, LoRa_DI0, LoRa_RST);
+//SX1278 radio = Module(LoRa_CS, LoRa_DI0, LoRa_RST);
 
 
-// --- LLAVE MAESTRA PARA DEBUG ---
-// Ponlo en 'true' para activar los mensajes por Serial durante las pruebas.
-// Ponlo en 'false' para compilar el código de vuelo final sin NINGÚN mensaje.
-#define DEBUG_MODE true
-
-// --- MACROS DE DEPURACIÓN ---
-// Si DEBUG_MODE es true, estas macros usarán Serial.print.
-// Si es false, el compilador las eliminará por completo.
-#if DEBUG_MODE
-  #define D_PRINT(...)    Serial.print(__VA_ARGS__)
-  #define D_PRINTLN(...)  Serial.println(__VA_ARGS__)
-#else
-  #define D_PRINT(...)
-  #define D_PRINTLN(...)
-#endif
-
-// --- DEFINICIONES PARA EL DESPLIEGUE ---
-#define DEPLOYMENT_PIN 2 // Este pin hay que elegirlo para el despliegue del paracaídas, de momento uso el pin 2 que lo tengo libre
 
 //Variable para la medida inicial de la altura
 
@@ -189,6 +202,45 @@ void guardarDatosEnSD(String datos) {
   archivo.println(datos);
   archivo.close();
   //Serial.println("✅ Datos guardados en microSD!");
+}
+
+// VERSIÓN 2: Para el struct de datos de vuelo
+void guardarDatosEnSD(const TelemetryData& packet) {
+  digitalWrite(LoRa_CS, HIGH);
+  digitalWrite(SD_CS, LOW);
+  
+  File archivo = SD.open("/datos.csv", FILE_APPEND);
+  if (!archivo) {
+    Serial.println("❌ Error al escribir en microSD!");
+    return;
+  }
+
+  // --- CONSTRUCCIÓN DE LA LÍNEA DEL CSV, CAMPO POR CAMPO ---
+  archivo.print(packet.hdop, 2); archivo.print(",");
+  archivo.print(packet.hour); archivo.print(":");
+  archivo.print(packet.minute); archivo.print(":");
+  archivo.print(packet.second); archivo.print(",");
+  archivo.print(packet.latitude, 6); archivo.print(",");
+  archivo.print(packet.longitude, 6); archivo.print(",");
+  archivo.print(packet.speed_kmph, 2); archivo.print(",");
+  archivo.print(packet.altitude_gps, 2); archivo.print(",");
+  archivo.print(packet.pressure_hpa, 2); archivo.print(",");
+  archivo.print(packet.altitude_bar, 2); archivo.print(",");
+  archivo.print(packet.temperature, 2); archivo.print(",");
+  archivo.print(packet.acc_x, 4); archivo.print(",");
+  archivo.print(packet.acc_y, 4); archivo.print(",");
+  archivo.print(packet.acc_z, 4); archivo.print(",");
+  archivo.print(packet.gyro_x, 4); archivo.print(",");
+  archivo.print(packet.gyro_y, 4); archivo.print(",");
+  archivo.print(packet.gyro_z, 4); archivo.print(",");
+  archivo.print(packet.mag_x, 2); archivo.print(",");
+  archivo.print(packet.mag_y, 2); archivo.print(",");
+  archivo.print(packet.mag_z, 2); archivo.print(",");
+  archivo.print(packet.roll, 2); archivo.print(",");
+  archivo.print(packet.pitch, 2); archivo.print(",");
+  archivo.println(packet.yaw, 2); 
+
+  archivo.close();
 }
 
 // Versión bloqueante
@@ -311,9 +363,10 @@ static void smartDelay(unsigned long ms) {
 }
 
 void setup() {
-  bool fallo[4] = {false,false,false,false};
+  bool fallo[6] = {false,false,false,false,false,false};
   Serial.begin(115200);
   Serial2.begin(9600, SERIAL_8N1, 44, 43); 
+  filter.begin(1000);
   delay(1000);
 
   #if DEBUG_MODE
@@ -329,8 +382,6 @@ void setup() {
   for (int i = 0; i < APOGEE_DETECTION_WINDOW; i++) {
     altitudeReadings[i] = -1000.0;
   }
-
-  // ... resto de tu código de setup (inicialización de sensores, LoRa, SD) ...
 
   D_PRINTLN("Aviónica lista.");
   D_PRINT("Estado inicial: ");
@@ -355,23 +406,39 @@ void setup() {
   
   //Incializar Acelerómetro
   #if IMUConectada
-    Serial.println("Test 1");
+    Serial.println("Test 1: Acelerómetro");
     if(!accel.begin()){
-    //There was a problem detecting the ADXL345 ... check your connections 
     fallo[0]=true;
     }
     //displaySensorDetails();
   #endif
   
   delay(1000);
+
+  #if IMUConectada
+    Serial.println("Test 2: Giróscopo");
+    if(!gyroscope.begin(, 0x69)){
+      fallo[1] = true; // Usamos el nuevo espacio en el array
+    }
+  #endif
+
+  delay(1000);
   
+  #if IMUConectada
+    Serial.println("Test 3: Magnetómetro");
+    if(!mag.begin()){
+      fallo[2] = true; // Usamos el nuevo espacio en el array
+    }
+  #endif
+
+  delay(1000);
   
-  Serial.println("Test 2");
+  Serial.println("Test 4: Barómetro");
   // Inicializar barómetro BMP280
   int status = bmp280.begin();
   if (status!=0) {
     
-    fallo[1] = true;
+    fallo[3] = true;
     
   }
   delay(1000);
@@ -381,7 +448,7 @@ void setup() {
   
   //Serial.println("✅ BMP280 iniciado!");
 
-  Serial.println("Test 3");
+  Serial.println("Test 5: SD");
   // Inicializar SD
   digitalWrite(SD_CS, LOW); 
   #if usarLoRa
@@ -391,7 +458,7 @@ void setup() {
   
   if (!SD.begin(SD_CS)) {
     
-    fallo[2] = true;
+    fallo[4] = true;
     
   }
   //Serial.println("✅ MicroSD lista!");
@@ -400,7 +467,7 @@ void setup() {
   // Inicializar LoRa
 
   #if usarLoRa
-      Serial.println("Test 4");
+      Serial.println("Test 6: LoRa");
       digitalWrite(SD_CS, HIGH); 
       digitalWrite(LoRa_CS, LOW);
 
@@ -412,7 +479,7 @@ void setup() {
       int state = radio.begin();
       if (state != RADIOLIB_ERR_NONE) { 
         // Si la inicialización falla, marcamos el error
-        fallo[3] = true;
+        fallo[5] = true;
       } else {
         // Si la inicialización fue exitosa, configuramos los parámetros de largo alcance
         radio.setSpreadingFactor(9);//3~4km
@@ -428,23 +495,30 @@ void setup() {
       }
   #else
       Serial.println("No hay LoRa conectado");
-      fallo[3] = false;
+      fallo[5] = false;
   #endif
   delay(1000);
 
-  while(fallo[0]||fallo[1]||fallo[2]||fallo[3]){
+  while(fallo[0]||fallo[1]||fallo[2]||fallo[3]||fallo[4]||fallo[5]){
     if(fallo[0]) {
-      Serial.println("Ooops, no LSM303 detected ... Check your wiring!");
+      Serial.println("❌ Error al iniciar Acelerómetro");
     }
     if(fallo[1]){
-      Serial.println("❌ Error al iniciar BMP280");
+      Serial.println("❌ Error al iniciar Giróscopo");
     }
-    if(fallo[2]){
+    if (fallo[2]){
+      Serial.println("❌ Error al iniciar Magnetómetro");
+    }
+    if(fallo[3]){
+      Serial.println("❌ Error al iniciar Barómetro");
+    }
+    if(fallo[4]){
       Serial.println("❌ Error al inicializar microSD");
     }
-    if (fallo[3]){
+    if (fallo[5]){
       Serial.println("❌ Error al iniciar LoRa");
     }
+    
     delay(3000);
   }
 
@@ -488,10 +562,8 @@ void loop() {
   // Esperar datos del GPS antes de procesar
   smartDelay(1);
 
-  #if IMUConectada
-    sensors_event_t event;
-    accel.getEvent(&event);
-  #endif
+
+
   float latitud = gps.location.isValid() ? gps.location.lat() : -1.0;
   float longitud = gps.location.isValid() ? gps.location.lng() : -1.0;
   float velocidad = gps.speed.kmph();
@@ -511,18 +583,51 @@ void loop() {
   //float altitudBar = bmp280.calAltitude(presion, P0);
   float altitudBar = bmp280.calAltitude(presion, P0) - initialAltitude;
   /* Display the results (acceleration is measured in m/s^2) */
+  
   #if IMUConectada
-    float acc_x = event.acceleration.x;
-    float acc_y = event.acceleration.y;
-    float acc_z = event.acceleration.z;
+  sensors_event_t accel_event;
+    accel.getEvent(&accel_event);
+    
+    sensors_event_t gyro_event;
+    gyroscope.getEvent(&gyro_event);
+
+    sensors_event_t mag_event; // <-- El objeto que faltaba
+    mag.getEvent(&mag_event);
+  
+    // --- EXTRACCIÓN DE DATOS CRUDOS ---
+    float acc_x = accel_event.acceleration.x;
+    float acc_y = accel_event.acceleration.y;
+    float acc_z = accel_event.acceleration.z;
+    
+    // Las velocidades angulares deben estar en radianes/segundo (la librería ya lo hace)
+    float gyro_x = gyro_event.gyro.x;
+    float gyro_y = gyro_event.gyro.y;
+    float gyro_z = gyro_event.gyro.z;
+
+    // Los datos del magnetómetro en micro-Tesla (uT) (la librería ya lo hace)
+    float mag_x = mag_event.magnetic.x;
+    float mag_y = mag_event.magnetic.y;
+    float mag_z = mag_event.magnetic.z;
+    
+    // --- FUSIÓN DE SENSORES ---
+    // Alimentamos el filtro con los 9 ejes de datos
+    filter.update(gyro_x, gyro_y, gyro_z, 
+                  acc_x, acc_y, acc_z, 
+                  mag_x, mag_y, mag_z);
+
+    // --- OBTENCIÓN DE LOS ÁNGULOS FINALES ---
+    float roll = filter.getRoll();
+    float pitch = filter.getPitch();
+    float yaw = filter.getYaw();
   #else
-    float acc_x = -1;
-    float acc_y = -1;
-    float acc_z = -1;
+    float acc_x = -1, acc_y = -1, acc_z = -1;
+    float gyro_x = -1, gyro_y = -1, gyro_z = -1;
+    float roll = -1, pitch = -1, yaw = -1;
   #endif
   
-  float totalAcceleration = sqrt(acc_x*acc_x + acc_y*acc_y + acc_z*acc_z);
-
+  
+  //Máquina de estados, de momento deshabilitada
+  /*
   switch (currentState) {
     case TESTING:
       // Este estado usa 'Serial.print' directamente porque es una interfaz de usuario,
@@ -590,14 +695,16 @@ void loop() {
       // pero la telemetría y el guardado en SD siguen funcionando.
       break;
   }
+  */
 
 
 
   char buffer[200];
   String datos = "";
 
-  // Guardar en microSD
   
+  
+  //Casos de debug
 
   #if debugGPS
     latitud = gps.location.lat();
@@ -614,92 +721,105 @@ void loop() {
     #if debugBar
       datos += "; Presión: " + String(presion/100) + " hPa; Temperatura: " + String(temperatura) +" ºC; Altitud calculada: " + String(altitudBar) + "m";
       
-      #if (debugIMU && IMUConectada)
-        datos += "; Aceleración en X: " + String(acc_x) + "m/s^2; Aceleración en Y: " + String(acc_y) + " m/s^2; Aceleración en Z: " + String(acc_z);
+      #if (debugIMU && IMUConectada) //Añadir giróscopo y magnetómetro (desde el filtro?)
+        datos += "; Aceleración en X: " + String(acc_x) + "m/s^2; Aceleración en Y: " + String(acc_y) + " m/s^2; Aceleración en Z: " + String(acc_z) + 
+                "m/s^2; Velocidad angular en X: " + String(gyro_x) + "rad/s; Velocidad angular en Y: " + String(gyro_y) + "rad/s; Velocidad angular en Z: " 
+                + String(gyro_z) + "rad/s; Campo magnético en X: " + String(mag_x) + "uT; Campo magnético en Y: " + String(mag_y) 
+                + " uT; Campo magnético en Z: " + String(mag_z) + "uT; Roll: " + String(roll) + "º; Pitch: " + String(pitch) + "º; Yaw: " + String(yaw) +"º";
       #endif
     #endif
   #else 
     #if debugBar
       datos += "; Presión: " + String(presion/100) + " hPa; Temperatura: " + String(temperatura) +" ºC; Altitud calculada: " + String(altitudBar) + "m";
       
-      #if (debugIMU && IMUConectada) 
-        datos += "; Aceleración en X: " + String(acc_x) + "m/s^2; Aceleración en Y: " + String(acc_y) + " m/s^2; Aceleración en Z: " + String(acc_z);
+      #if (debugIMU && IMUConectada) //Añadir giróscopo y magnetómetro (desde el filtro?)
+        datos += "; Aceleración en X: " + String(acc_x) + "m/s^2; Aceleración en Y: " + String(acc_y) + " m/s^2; Aceleración en Z: " + String(acc_z) + 
+                "m/s^2; Velocidad angular en X: " + String(gyro_x) + "rad/s; Velocidad angular en Y: " + String(gyro_y) + "rad/s; Velocidad angular en Z: " 
+                + String(gyro_z) + "rad/s; Campo magnético en X: " + String(mag_x) + "uT; Campo magnético en Y: " + String(mag_y) 
+                + " uT; Campo magnético en Z: " + String(mag_z) + "uT; Roll: " + String(roll) + "º; Pitch: " + String(pitch) + "º; Yaw: " + String(yaw) +"º";
       #endif
     #else 
-      #if (debugIMU && IMUConectada)
-        datos += "Aceleración en X: " + String(acc_x) + "m/s^2; Aceleración en Y: " + String(acc_y) + " m/s^2; Aceleración en Z: " + String(acc_z);
+      #if (debugIMU && IMUConectada) //Añadir giróscopo y magnetómetro (desde el filtro?)
+        datos += "; Aceleración en X: " + String(acc_x) + "m/s^2; Aceleración en Y: " + String(acc_y) + " m/s^2; Aceleración en Z: " + String(acc_z) + 
+                "m/s^2; Velocidad angular en X: " + String(gyro_x) + "rad/s; Velocidad angular en Y: " + String(gyro_y) + "rad/s; Velocidad angular en Z: " 
+                + String(gyro_z) + "rad/s; Campo magnético en X: " + String(mag_x) + "uT; Campo magnético en Y: " + String(mag_y) 
+                + " uT; Campo magnético en Z: " + String(mag_z) + "uT; Roll: " + String(roll) + "º; Pitch: " + String(pitch) + "º; Yaw: " + String(yaw) +"º";
       #else
-        #if IMUConectada
-          sprintf(buffer,"HDOP:%f;%d:%d:%d;%.8f;%.8f;%.2f;%.1f;%.2f;%.2f;%.2f;x:%.8f;y:%.8f;z:%.8f",HDOP,hora,minuto,segundo,latitud,longitud,velocidad,altitudGPS,(presion!=0.0? presion/100.0 : -1), (altitudBar>0.0? altitudBar : -1.0),(temperatura!=0.0 ? temperatura : -1.0), acc_x, acc_y, acc_z); 
+        #if IMUConectada //Añadir giróscopo y magnetómetro (desde el filtro?)
+        //Orden de los campos:
+        //HDOP, HORA, MINUTO, SEGUNDO, LATITUD, LONGITUD, VELOCIDAD_GPS, ALTITUD_GPS, PRESIÓN, ALTITUD_BAR, TEMPERATURA, ACC_X, ACC_Y, ACC_Z, 
+        //(sigue) VEL_ANG_X, VEL_ANG_Y, VEL_ANG_Z, CAMPO_MAG_X, CAMPO_MAG_Y, CAMPO_MAG_Z, ROLL, PITCH YAW
+          sprintf(buffer,"%f,%d,%d,%d,%.8f,%.8f,%.2f,%.1f,%.2f,%.2f,%.2f,%.8f,%.8f,%.8f,%.8f,%.8f,:%.8f,%.8f,%.8f,%.8f,%.8f,%.8f,%.8f;",HDOP,hora,minuto,segundo,latitud,longitud,velocidad,altitudGPS,(presion!=0.0? presion/100.0 : -1), (altitudBar>0.0? altitudBar : -1.0),(temperatura!=0.0 ? temperatura : -1.0), acc_x, acc_y, acc_z, gyro_x, gyro_y, gyro_z, mag_x, mag_y, mag_z, roll, pitch, yaw); 
           datos = String(buffer);
         #else
-          sprintf(buffer,"HDOP:%f;%d:%d:%d;%.8f;%.8f;%.2f;%.1f;%.2f;%.2f;%.2f;",HDOP,hora,minuto,segundo,latitud,longitud,velocidad,altitudGPS,(presion!=0.0? presion/100.0 : -1), (altitudBar>0.0? altitudBar : -1.0),(temperatura!=0.0 ? temperatura : -1.0)); 
+        //Orden de los campos:
+        //HDOP, HORA, MINUTO, SEGUNDO, LATITUD, LONGITUD, VELOCIDAD_GPS, ALTITUD_GPS, PRESIÓN, ALTITUD_BAR, TEMPERATURA
+          sprintf(buffer,"%f,%d,%d,%d,%.8f,%.8f,%.2f,%.1f,%.2f,%.2f,%.2f,",HDOP,hora,minuto,segundo,latitud,longitud,velocidad,altitudGPS,(presion!=0.0? presion/100.0 : -1), (altitudBar>0.0? altitudBar : -1.0),(temperatura!=0.0 ? temperatura : -1.0)); 
           datos = String(buffer);
         #endif
       #endif
     #endif
   #endif
-  //Cambiar de orden para que lo primero que salga sea lo del GPS
+  
 
   #if verMensaje
     Serial.println("💾 Datos a guardar: ");
     Serial.println(datos);
   #endif
+
+  //Divido en 2, si quiero hacer debug guardo con el string, sino con el struct
+  #if !debugResto
+      flightDataPacket.hdop = HDOP;
+      flightDataPacket.hour = hora;
+      flightDataPacket.minute = minuto;
+      flightDataPacket.second = segundo;
+      flightDataPacket.latitude = latitud;
+      flightDataPacket.longitude = longitud;
+      flightDataPacket.speed_kmph = velocidad;
+      flightDataPacket.altitude_gps = altitudGPS;
+      flightDataPacket.pressure_hpa = (presion != 0.0 ? presion / 100.0 : -1);
+      flightDataPacket.altitude_bar = (altitudBar > 0.0 ? altitudBar : -1.0);
+      flightDataPacket.temperature = (temperatura != 0.0 ? temperatura : -1.0);
+      flightDataPacket.acc_x = acc_x;
+      flightDataPacket.acc_y = acc_y;
+      flightDataPacket.acc_z = acc_z;
+      flightDataPacket.gyro_x = gyro_x;
+      flightDataPacket.gyro_y = gyro_y;
+      flightDataPacket.gyro_z = gyro_z;
+      flightDataPacket.mag_x = mag_x;
+      flightDataPacket.mag_y = mag_y;
+      flightDataPacket.mag_z = mag_z;
+      flightDataPacket.roll = roll;
+      flightDataPacket.pitch = pitch;
+      flightDataPacket.yaw = yaw;
+      guardarDatosEnSD(flightDataPacket);
+  #else
+      guardarDatosEnSD(datos);
+  #endif
   
   // --- SECCIÓN DE ENVÍO POR LORA (LÓGICA MODIFICADA) ---
   
+  
+
   // Solo entramos en la lógica de envío si la radio está libre.
   if (transmissionFinished) {
-  
-    #if debugResto
-      delay(0);
-    #else
-      // MODO DE VUELO NORMAL:
-      // La escritura en la SD siempre se hace en este modo, independientemente del LoRa.
-      guardarDatosEnSD(datos); 
-      
-      // AHORA, COMPROBAMOS SI VAMOS A USAR LORA EN GENERAL
       #if (usarLoRa && !debugLoRa)
-        // Dentro de este bloque, sabemos que el hardware LoRa está activo.
-        // Ahora podemos decidir si es para debug o para telemetría normal.
+        
+        transmissionFinished = false;
+        //Ya está todo metido en el struct de cuando se ha guardado en la SD
+      
+        enviarPaqueteLoRa(&flightDataPacket, sizeof(flightDataPacket));
+      #endif // Fin de la comprobación usarLoRa
+    
+    
 
-        #if debugLoRa
+      #if (usarLoRa && debugLoRa)
           // MODO DEBUG LORA:
           transmissionFinished = false;
           enviarDatosPorLoRa("Esto es una prueba del LoRa");
-        #else
-          // MODO DE VUELO NORMAL CON TELEMETRÍA:
-          transmissionFinished = false;
+      #endif //Chequeo del modo debug
+    
 
-          // 1. Llenamos la estructura (sin cambios)
-          flightDataPacket.hdop = HDOP;
-          flightDataPacket.hour = hora;
-          flightDataPacket.minute = minuto;
-          flightDataPacket.second = segundo;
-          flightDataPacket.latitude = latitud;
-          //flightDataPacket.testCero = 0;
-          flightDataPacket.longitude = longitud;
-          flightDataPacket.speed_kmph = velocidad;
-          flightDataPacket.altitude_gps = altitudGPS;
-          flightDataPacket.pressure_hpa = (presion != 0.0 ? presion / 100.0 : -1);
-          flightDataPacket.altitude_bar = (altitudBar > 0.0 ? altitudBar : -1.0);
-          flightDataPacket.temperature = (temperatura != 0.0 ? temperatura : -1.0);
-          flightDataPacket.acc_x = acc_x;
-          flightDataPacket.acc_y = acc_y;
-          flightDataPacket.acc_z = acc_z;
-
-          
-          
-          // 2. Iniciamos el envío NO BLOQUEANTE
-          enviarPaqueteLoRa(&flightDataPacket, sizeof(flightDataPacket));
-          
-        #endif // Fin de la comprobación debugLoRa
-      #endif // Fin de la comprobación usarLoRa
-    #endif // Fin de la comprobación debugResto
+    
   } 
 }
-
-
-
-
-

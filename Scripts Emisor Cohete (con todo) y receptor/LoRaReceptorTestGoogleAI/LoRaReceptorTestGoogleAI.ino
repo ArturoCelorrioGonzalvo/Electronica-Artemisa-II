@@ -12,22 +12,23 @@ SX1276 radio = new Module(LoRa_CS, LoRa_DI0, LoRa_RST);
 
 // Estructura de datos (idéntica a la del emisor)
 struct TelemetryData {
- // uint8_t testCero;
+ 
   float hdop;
   uint8_t hour;
   uint8_t minute;
   uint8_t second;
   double latitude;
   double longitude;
-  float speed_kmph;
-  float altitude_gps;
-  float pressure_hpa;
-  float altitude_bar;
-  float temperature;
-  float acc_x;
-  float acc_y;
-  float acc_z;
-  uint8_t tamanoPaquete;
+  float speed_kmph; //2 decimales
+  float altitude_gps; //1 decimal
+  float pressure_hpa; //Sin decimales
+  float altitude_bar; //1 decimal
+  float temperature; //2 decimales
+  float acc_x, acc_y, acc_z;
+  float gyro_x, gyro_y, gyro_z;
+  float mag_x, mag_y, mag_z;
+  float roll, pitch, yaw;
+  
 };
 
 TelemetryData packet;
