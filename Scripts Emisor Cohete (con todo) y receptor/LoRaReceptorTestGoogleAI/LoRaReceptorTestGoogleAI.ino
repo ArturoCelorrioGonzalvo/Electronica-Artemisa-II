@@ -12,7 +12,7 @@ SX1276 radio = new Module(LoRa_CS, LoRa_DI0, LoRa_RST);
 
 // Estructura de datos (idéntica a la del emisor)
 struct TelemetryData {
- 
+  int fix;
   float hdop;
   uint8_t hour;
   uint8_t minute;
@@ -110,6 +110,7 @@ void loop() {
       Serial.print(F("  Aceleración eje X: ")); Serial.println(packet.acc_x);
       Serial.print(F("  Aceleración eje Y: ")); Serial.println(packet.acc_y);
       Serial.print(F("  Aceleración eje Z: ")); Serial.println(packet.acc_z);
+      Serial.print(F("  Tiempo desde el último fix: ")); Serial.println(packet.fix);
       //Serial.print(F("  Tamaño paquete: ")); Serial.println(sizeof(packet));
       Serial.print(F("  RSSI: ")); Serial.print(radio.getRSSI()); Serial.println(F(" dBm"));
       Serial.print(F("  SNR: ")); Serial.print(radio.getSNR()); Serial.println(F(" dB"));
