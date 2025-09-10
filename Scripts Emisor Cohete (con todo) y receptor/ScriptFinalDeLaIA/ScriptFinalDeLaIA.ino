@@ -24,15 +24,15 @@
 #define debugGPS false
 #define debugBar false
 #define debugIMU false
-#define verMensaje true
+#define verMensaje false
 
-#define IMUConectada true
+#define IMUConectada true //Quitar
 
 #define borrarSD true
 
 #define debugResto debugGPS || debugBar || debugIMU
 #define debugLoRa false
-#define usarLoRa true
+#define usarLoRa true // Quitar
 
 // Definir pines
 #define P0  1013.25//presión a nivel del mar
@@ -403,7 +403,8 @@ void setupSensors(bool (&fallo)[6]) {
 
 void setupPeripherals(bool (&fallo)[6]) {
   D_PRINTLN("Test 5: Tarjeta SD");
-  if (!SD.begin(SD_CS)) {
+  
+  if (!SD.begin(SD_CS, SPI, 4000000, "/sd", 5, true)) {
     fallo[4] = true;
   }
 
@@ -450,12 +451,12 @@ void handleSetupFailure(const bool (&fallo)[6]) {
 void formatSDCard() {
   #if borrarSD
     D_PRINTLN("🗑 Eliminando archivos en la microSD...");
-    File root = SD.open("/");
+    File root = SD.open("\\");
     File entry = root.openNextFile();
     while(entry) {
       String entryName = entry.name();
       entry.close();
-      if (!entryName.equals("/System Volume Information")) {
+      if (!entryName.equals("\\System Volume Information")) {
         if (SD.remove(entryName.c_str())) {
           D_PRINT("  ✅ Archivo eliminado: ");
           D_PRINTLN(entryName);
@@ -620,6 +621,7 @@ void setup() {
 }
 
 void loop() {
+  int microsTiempo = micros();
   // 1. Leer todos los sensores y actualizar el struct 'flightDataPacket' con los datos más recientes.
   updateSensorData();
 
@@ -688,4 +690,6 @@ void loop() {
     D_PRINT("  Yaw:   "); D_PRINT(flightDataPacket.yaw, 2); D_PRINTLN(" deg");
     
   #endif
+  
+  Serial.print("Tiempo de loop: "); Serial.print(micros()-microsTiempo); Serial.println("us");
 }
