@@ -4,13 +4,13 @@
 #include <AsyncTCP.h>
 #include <ESPAsyncWebServer.h>
 
-#define SD_CS 10  // Pin CS de la tarjeta SD
+#define SD_CS 3  // Pin CS de la tarjeta SD
 #define SD_MOSI 11
 #define SD_MISO 12
 #define SD_SCK 13
 
-const char* ssid = "MIWIFI_MXvM";    // GALAXY
-const char* password = "Rr7mr33s";  //  00000000
+const char* ssid = "Galaxy";    // MIWIFI_MXvM
+const char* password = "00000000";  //  Rr7mr33s
 
 AsyncWebServer server(80);
 

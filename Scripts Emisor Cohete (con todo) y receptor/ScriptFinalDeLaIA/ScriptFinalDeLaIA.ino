@@ -206,28 +206,28 @@ void guardarDatosEnSD(const TelemetryData& packet) {
   }
 
   // --- CONSTRUCCIÓN DE LA LÍNEA DEL CSV, CAMPO POR CAMPO ---
-  archivo.print(packet.hdop, 2); archivo.print(",");
+  archivo.print(packet.hdop, 2); archivo.print(";");
   archivo.print(packet.hour); archivo.print(":");
   archivo.print(packet.minute); archivo.print(":");
-  archivo.print(packet.second); archivo.print(",");
-  archivo.print(packet.latitude, 6); archivo.print(",");
-  archivo.print(packet.longitude, 6); archivo.print(",");
-  archivo.print(packet.speed_kmph, 2); archivo.print(",");
-  archivo.print(packet.altitude_gps, 2); archivo.print(",");
-  archivo.print(packet.pressure_hpa, 2); archivo.print(",");
-  archivo.print(packet.altitude_bar, 2); archivo.print(",");
-  archivo.print(packet.temperature, 2); archivo.print(",");
-  archivo.print(packet.acc_x, 4); archivo.print(",");
-  archivo.print(packet.acc_y, 4); archivo.print(",");
-  archivo.print(packet.acc_z, 4); archivo.print(",");
-  archivo.print(packet.gyro_x, 4); archivo.print(",");
-  archivo.print(packet.gyro_y, 4); archivo.print(",");
-  archivo.print(packet.gyro_z, 4); archivo.print(",");
-  archivo.print(packet.mag_x, 2); archivo.print(",");
-  archivo.print(packet.mag_y, 2); archivo.print(",");
-  archivo.print(packet.mag_z, 2); archivo.print(",");
-  archivo.print(packet.roll, 2); archivo.print(",");
-  archivo.print(packet.pitch, 2); archivo.print(",");
+  archivo.print(packet.second); archivo.print(";");
+  archivo.print(packet.latitude, 6); archivo.print(";");
+  archivo.print(packet.longitude, 6); archivo.print(";");
+  archivo.print(packet.speed_kmph, 2); archivo.print(";");
+  archivo.print(packet.altitude_gps, 2); archivo.print(";");
+  archivo.print(packet.pressure_hpa, 2); archivo.print(";");
+  archivo.print(packet.altitude_bar, 2); archivo.print(";");
+  archivo.print(packet.temperature, 2); archivo.print(";");
+  archivo.print(packet.acc_x, 4); archivo.print(";");
+  archivo.print(packet.acc_y, 4); archivo.print(";");
+  archivo.print(packet.acc_z, 4); archivo.print(";");
+  archivo.print(packet.gyro_x, 4); archivo.print(";");
+  archivo.print(packet.gyro_y, 4); archivo.print(";");
+  archivo.print(packet.gyro_z, 4); archivo.print(";");
+  archivo.print(packet.mag_x, 2); archivo.print(";");
+  archivo.print(packet.mag_y, 2); archivo.print(";");
+  archivo.print(packet.mag_z, 2); archivo.print(";");
+  archivo.print(packet.roll, 2); archivo.print(";");
+  archivo.print(packet.pitch, 2); archivo.print(";");
   archivo.println(packet.yaw, 2); 
 
   archivo.close();
@@ -381,34 +381,34 @@ void setupBuses() {
 // Pasamos el array 'fallo' por referencia para que esta función pueda modificarlo
 void setupSensors(bool (&fallo)[6]) {
   #if IMUConectada
-    D_PRINTLN("Test 1: Acelerómetro...");
+    D_PRINTLN("Test 1: Acelerómetro");
     if(!accel.begin()){ fallo[0] = true; }
   
-    D_PRINTLN("Test 2: Giróscopo...");
+    D_PRINTLN("Test 2: Giróscopo");
     if (!gyroscope.init()) {
       fallo[1] = true;
     } else {
       gyroscope.enableDefault();
     }
   
-    D_PRINTLN("Test 3: Magnetómetro...");
+    D_PRINTLN("Test 3: Magnetómetro");
     if(!mag.begin()){ fallo[2] = true; }
   #endif
 
-  D_PRINTLN("Test 4: Barómetro...");
+  D_PRINTLN("Test 4: Barómetro");
   if (bmp280.begin() != 0) {
     fallo[3] = true;
   }
 }
 
 void setupPeripherals(bool (&fallo)[6]) {
-  D_PRINTLN("Test 5: Tarjeta SD...");
+  D_PRINTLN("Test 5: Tarjeta SD");
   if (!SD.begin(SD_CS)) {
     fallo[4] = true;
   }
 
   #if usarLoRa
-      D_PRINTLN("Test 6: LoRa...");
+      D_PRINTLN("Test 6: LoRa");
       int state = radio.begin();
       if (state != RADIOLIB_ERR_NONE) { 
         fallo[5] = true;
@@ -492,8 +492,8 @@ void updateSensorData() {
   // --- Barómetro ---
   flightDataPacket.temperature = bmp280.getTemperature();
   uint32_t presion = bmp280.getPressure();
-  flightDataPacket.altitude_bar = bmp280.calAltitude(presion, P0) - initialAltitude;//revisar altitud inicial (-3km en referencia)
-  //flightDataPacket.altitude_bar = bmp280.calAltitude(presion, P0);
+  //flightDataPacket.altitude_bar = bmp280.calAltitude(presion, P0) - initialAltitude;//revisar altitud inicial (-3km en referencia)
+  flightDataPacket.altitude_bar = bmp280.calAltitude(presion, P0);
   flightDataPacket.pressure_hpa = (presion != 0.0 ? presion / 100.0 : -1.0);
 
   // --- IMU (Acelerómetro, Giroscopio, Magnetómetro) ---
@@ -514,6 +514,15 @@ void updateSensorData() {
     flightDataPacket.mag_y = mag_event.magnetic.y;
     flightDataPacket.mag_z = mag_event.magnetic.z;
     
+    #define DEBUG_RAW_IMU false // Ponlo en 'false' para desactivar este mensaje
+
+    #if DEBUG_RAW_IMU
+      D_PRINTLN("--- Datos Crudos para el Filtro ---");
+      D_PRINT("  Acc (X,Y,Z): "); D_PRINT(flightDataPacket.acc_x); D_PRINT(", "); D_PRINT(flightDataPacket.acc_y); D_PRINT(", "); D_PRINTLN(flightDataPacket.acc_z);
+      D_PRINT("  Gyro (X,Y,Z): "); D_PRINT(flightDataPacket.gyro_x); D_PRINT(", "); D_PRINT(flightDataPacket.gyro_y); D_PRINT(", "); D_PRINTLN(flightDataPacket.gyro_z);
+      D_PRINT("  Mag (X,Y,Z): "); D_PRINT(flightDataPacket.mag_x); D_PRINT(", "); D_PRINT(flightDataPacket.mag_y); D_PRINT(", "); D_PRINTLN(flightDataPacket.mag_z);
+    #endif
+    
     // Alimentar el filtro y obtener los ángulos de orientación
     filter.update(flightDataPacket.gyro_x, flightDataPacket.gyro_y, flightDataPacket.gyro_z, 
                   flightDataPacket.acc_x, flightDataPacket.acc_y, flightDataPacket.acc_z, 
@@ -530,6 +539,7 @@ void updateSensorData() {
   #endif
 }
 
+//La máquina de estados está comentada, hay que terminarla
 void runStateMachine() {
   // Esta función contiene toda la lógica de vuelo.
   // (La he dejado comentada como en tu código original, puedes activarla cuando quieras)
@@ -594,7 +604,7 @@ void setup() {
   D_PRINTLN("✅ Todos los componentes se han iniciado correctamente.");
 
   // Inicializar filtro AHRS y altitud de referencia
-  filter.begin(1000);
+  filter.begin(100);
   initialAltitude = bmp280.calAltitude(bmp280.getPressure(), P0);
   D_PRINT("Altitud inicial en la rampa: "); D_PRINT(initialAltitude); D_PRINTLN(" m");
 
@@ -630,7 +640,7 @@ void loop() {
     D_PRINTLN("\n--- Contenido del Struct en este Ciclo ---");
 
     // --- GPS ---
-    D_PRINT("  GPS Time (UTC): ");
+    D_PRINT("  GPS Time (GMT+2): ");
     if (flightDataPacket.hour < 10) D_PRINT('0');
     D_PRINT((unsigned int)flightDataPacket.hour);
     D_PRINT(':');
