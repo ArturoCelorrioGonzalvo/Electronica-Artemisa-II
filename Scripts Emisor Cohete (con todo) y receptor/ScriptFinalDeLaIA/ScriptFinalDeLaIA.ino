@@ -26,13 +26,12 @@
 #define debugIMU false
 #define verMensaje false
 
-#define IMUConectada true //Quitar
 
 #define borrarSD true
 
 #define debugResto debugGPS || debugBar || debugIMU
 #define debugLoRa false
-#define usarLoRa true // Quitar
+
 
 // Definir pines
 #define P0  1013.25//presión a nivel del mar
@@ -78,6 +77,8 @@ MISO pin 12
 GND GND 
 */
 
+
+
 // --- LLAVE MAESTRA PARA DEBUG ---
 // Ponlo en 'true' para activar los mensajes por Serial durante las pruebas.
 // Ponlo en 'false' para compilar el código de vuelo final sin NINGÚN mensaje.
@@ -97,12 +98,12 @@ GND GND
 // --- DEFINICIONES PARA EL DESPLIEGUE ---
 #define DEPLOYMENT_PIN 2 // Este pin hay que elegirlo para el despliegue del paracaídas, de momento uso el pin 2 que lo tengo libre
 
+#define MANUAL_STATE_OVERRIDE true //cambiar a false para el vuelo real
+
 //Configuración del acelerómetro
-#if IMUConectada
-  Adafruit_LSM303_Accel_Unified accel = Adafruit_LSM303_Accel_Unified(54321);
-  L3G gyroscope;
-  Adafruit_LSM303_Mag_Unified mag = Adafruit_LSM303_Mag_Unified(12345);
-#endif
+Adafruit_LSM303_Accel_Unified accel = Adafruit_LSM303_Accel_Unified(54321);
+L3G gyroscope;
+Adafruit_LSM303_Mag_Unified mag = Adafruit_LSM303_Mag_Unified(12345);
 
 struct TelemetryData {
   
@@ -125,7 +126,23 @@ struct TelemetryData {
   float mag_x, mag_y, mag_z;
   float roll, pitch, yaw;
 };
-//Cambiar a UTF-8?
+
+struct LoRaPacket {
+  uint8_t flight_state;
+  float altitude_bar;
+  float speed_kmph;
+  float pitch;
+  float yaw;
+};
+
+// --- DEFINICIONES PARA PRUEBA MANUAL DE LA MÁQUINA DE ESTADOS ---
+
+
+// Variables para el parpadeo no bloqueante del LED
+unsigned long lastBlinkTime = 0;
+bool ledState = LOW;
+
+
 
 // Creamos una instancia global de la estructura para llenarla en el loop
 TelemetryData flightDataPacket;
@@ -138,19 +155,6 @@ TinyGPSPlus gps;
 // Configuración del Barómetro
 BMP280 bmp280;
 
-
-// --- NUEVO: INTERRUPCIÓN PARA EL EMISOR ---
-// Esta bandera volátil nos dirá cuándo ha terminado la transmisión anterior.
-// Se inicializa en 'true' para permitir el envío del primer paquete.
-volatile bool transmissionFinished = true;
-
-// Esta es la Rutina de Servicio de Interrupción (ISR).
-// Se ejecuta automáticamente cuando el LoRa termina de enviar un paquete.
-// Debe ser muy rápida. IRAM_ATTR es una optimización para ESP32.
-void IRAM_ATTR onTxDone() {
-  // La transmisión ha terminado, levantamos la bandera.
-  transmissionFinished = true;
-}
 
 // Definimos la ESTRUCTURA para los datos de telemetría reales.
 // Debe ser idéntica en el emisor y el receptor.
@@ -169,21 +173,51 @@ float initialAltitude = 0.0;
 
 // Máquina de estados con el modo TESTING
 enum FlightState {
-  TESTING,          // Para pruebas en tierra
-  ON_PAD,           // Para el estado de espera en la rampa
-  ASCENDING,
-  APOGEE_DETECTED,
-  RECOVERY
+  DEBUG,      // Modo de taller, todo activado
+  TEST,       // Modo de espera en tierra, bajo consumo, esperando comando
+  ON_PAD,     // En la rampa, listo para el lanzamiento
+  ASCENDING,  // Vuelo motorizado y por inercia
+  APOGEE_DEPLOYMENT, // Despliegue del paracaídas piloto
+  MAIN_DEPLOYMENT,   // Despliegue del paracaídas principal
+  LANDED        // En tierra, activando recuperación
 };
 
 // --- CONFIGURACIÓN DEL MODO DE ARRANQUE ---
 // Cambia este valor a ON_PAD para el vuelo real.
-FlightState currentState = TESTING; 
+FlightState currentState = DEBUG; 
+
+// --- INTERRUPCIONES UNIFICADAS PARA LORA ---
+
+// Banderas para los dos posibles eventos del pin DI0.
+// Renombradas para mayor claridad.
+volatile bool loraTxDone = true;  // Flag para transmisión completada
+volatile bool loraRxDone = false; // Flag para paquete recibido
+
+// ISR Unificada para el pin DI0. Esta es la ÚNICA función que se 'enganchará' al pin.
+void IRAM_ATTR onLoRaDio0Interrupt() {
+  // Cuando esta interrupción se dispara, miramos el estado actual del cohete
+  // para saber qué evento acaba de ocurrir.
+  if (currentState == TEST) {
+    // Si estábamos en modo TEST, el LoRa estaba en modo escucha.
+    // Por lo tanto, esta interrupción significa que ha llegado un paquete.
+    loraRxDone = true;
+  } else {
+    // En CUALQUIER otro estado (ON_PAD, ASCENDING, etc.), el LoRa solo transmite.
+    // Por lo tanto, esta interrupción significa que una transmisión ha terminado.
+    loraTxDone = true;
+  }
+}
 
 // Umbrales y constantes
-const float LAUNCH_ACCELERATION_THRESHOLD = 30.0; // m/s^2 (aprox. 3G)
-const int APOGEE_DETECTION_WINDOW = 5;
+const float LAUNCH_ACCELERATION_THRESHOLD = 35.0; // m/s^2 (aprox. 3G)
+const float MAIN_DEPLOYMENT_ALTITUDE = 150.0;     // 150 metros sobre la altitud inicial
+const unsigned long LANDING_STABILITY_DURATION = 5000; // 5 segundos de altitud estable para detectar aterrizaje
 
+// Variables de estado para la lógica de vuelo
+float restingAccelerationZ = 0.0;
+unsigned long landedTimer = 0;
+float lastLandedAltitude = 0;
+const int APOGEE_DETECTION_WINDOW = 10;
 // Buffer para detección de apogeo
 float altitudeReadings[APOGEE_DETECTION_WINDOW];
 int readingIndex = 0;
@@ -192,9 +226,6 @@ bool altitudeBufferFull = false;
 // Temporizador para el modo de prueba
 unsigned long lastTestPrint = 0;
 
-
-
-// VERSIÓN 2: Para el struct de datos de vuelo
 void guardarDatosEnSD(const TelemetryData& packet) {
   digitalWrite(LoRa_CS, HIGH);
   digitalWrite(SD_CS, LOW);
@@ -232,34 +263,6 @@ void guardarDatosEnSD(const TelemetryData& packet) {
 
   archivo.close();
 }
-
-// Versión bloqueante
-/*
-void enviarPaqueteLoRa(const void* data, size_t size) {
-  // Gestionamos los pines Chip Select
-  digitalWrite(SD_CS, HIGH);
-  digitalWrite(LoRa_CS, LOW);
-
-  // Advertencia si los datos son demasiado grandes para un solo paquete
-  if (size > 255) {
-    Serial.println("⚠️ ADVERTENCIA: Datos exceden tamaño máximo de LoRa (255 bytes).");
-    return; // No se envía nada para evitar errores
-  }
-
-  // Usamos el método transmit de RadioLib
-  int state = radio.transmit((uint8_t*)data, size);
-
-  if (state == RADIOLIB_ERR_NONE) {
-    // El paquete se empezó a enviar sin problemas
-    Serial.println("✅ Paquete LoRa enviado.");
-  } else {
-    // Hubo un error
-    Serial.print("❌ Fallo al enviar LoRa, código de error: ");
-    Serial.println(state);
-  }
-}
-*/
-
 //Versión no bloqueante
 void enviarPaqueteLoRa(const void* data, size_t size) {
   digitalWrite(SD_CS, HIGH);
@@ -267,7 +270,7 @@ void enviarPaqueteLoRa(const void* data, size_t size) {
 
   if (size > 255) {
     Serial.println("⚠️ ADVERTENCIA: Datos exceden tamaño máximo de LoRa (255 bytes).");
-    transmissionFinished = true; // Liberamos la bandera para permitir un nuevo intento.
+    loraTxDone = true; // Liberamos la bandera para permitir un nuevo intento.
     return;
   }
 
@@ -283,52 +286,9 @@ void enviarPaqueteLoRa(const void* data, size_t size) {
     // Debemos liberar la bandera manualmente para poder reintentar.
     Serial.print("❌ Fallo al iniciar envío LoRa, código de error: ");
     Serial.println(state);
-    transmissionFinished = true;
+    loraTxDone = true;
   }
 }
-
-/* Versión antigua, fragmentaba un string de datos, ahora usamos casi siempre un struct de datos
-void enviarDatosPorLoRa(String datos) {
-  digitalWrite(SD_CS, HIGH); //Desactivamos SD
-  digitalWrite(LoRa_CS, LOW); //Activamos LoRa
-
-  int maxBytes = 250;  // Límite recomendado para evitar errores
-  int totalFragmentos = (datos.length() / maxBytes) + 1;  // Calcular cantidad de fragmentos
-  
-  Serial.print("Datos: ");
-
-  for (int i = 0; i < datos.length(); i += maxBytes) {  
-    String fragmento = datos.substring(i, i + maxBytes);
-    Serial.print(fragmento);
-    LoRa.beginPacket();
-    LoRa.print(fragmento);
-    LoRa.endPacket();
-  }
-  Serial.println("");
-  //Serial.println("✅ Todos los fragmentos enviados! Esperando confirmación del receptor...");
-
-  // Esperar confirmación "OK" del receptor antes de enviar otro dato
-  
-  unsigned long tiempoInicio = millis();
-  while (millis() - tiempoInicio < 1000) {  // Máximo 1s de espera
-    int packetSize = LoRa.parsePacket();
-    if (packetSize) {
-      String confirmacion = "";
-      while (LoRa.available()) {
-        confirmacion += (char)LoRa.read();
-      }
-      if (confirmacion == "OK") {
-        Serial.println("✅ Confirmación recibida! Listo para el siguiente dato.");
-        return;
-      }
-    }
-    delay(10);
-  }
-
-  Serial.println("⚠ Tiempo de espera agotado. Reintentando...");
-  
-}
-*/
 
 // Mantenemos tu función original para los casos de debug.
 // Ahora simplemente llama a la nueva función.
@@ -366,10 +326,18 @@ void setupPins() {
 
   pinMode(SD_CS, OUTPUT);
   digitalWrite(SD_CS, HIGH); 
-  #if usarLoRa 
-    pinMode(LoRa_CS, OUTPUT); 
-    digitalWrite(LoRa_CS, HIGH);
-  #endif
+
+  pinMode(LoRa_CS, OUTPUT); 
+  digitalWrite(LoRa_CS, HIGH);
+
+   // Habilitamos el despertar desde una interrupción de GPIO
+  esp_sleep_enable_gpio_wakeup();
+  // Le decimos que el pin LoRa_DI0, cuando esté en ALTO, puede despertar al chip.
+  // Es importante que el pin esté configurado como INPUT_PULLDOWN para evitar despertares falsos.
+  gpio_set_intr_type((gpio_num_t)LoRa_DI0, GPIO_INTR_HIGH_LEVEL);
+  gpio_wakeup_enable((gpio_num_t)LoRa_DI0, GPIO_INTR_HIGH_LEVEL);
+
+  D_PRINTLN("Fuente de despertar (GPIO) configurada.");
 }
 
 void setupBuses() {
@@ -380,7 +348,6 @@ void setupBuses() {
 
 // Pasamos el array 'fallo' por referencia para que esta función pueda modificarlo
 void setupSensors(bool (&fallo)[6]) {
-  #if IMUConectada
     D_PRINTLN("Test 1: Acelerómetro");
     if(!accel.begin()){ fallo[0] = true; }
   
@@ -393,7 +360,6 @@ void setupSensors(bool (&fallo)[6]) {
   
     D_PRINTLN("Test 3: Magnetómetro");
     if(!mag.begin()){ fallo[2] = true; }
-  #endif
 
   D_PRINTLN("Test 4: Barómetro");
   if (bmp280.begin() != 0) {
@@ -408,21 +374,19 @@ void setupPeripherals(bool (&fallo)[6]) {
     fallo[4] = true;
   }
 
-  #if usarLoRa
-      D_PRINTLN("Test 6: LoRa");
-      int state = radio.begin();
-      if (state != RADIOLIB_ERR_NONE) { 
-        fallo[5] = true;
-      } else {
-        radio.setSpreadingFactor(9);
-        radio.setBandwidth(125.0);
-        radio.setCodingRate(6);
-        radio.setSyncWord(0xAB);
-        radio.setOutputPower(17);
-        pinMode(LoRa_DI0, INPUT);
-        attachInterrupt(digitalPinToInterrupt(LoRa_DI0), onTxDone, RISING);
-      }
-  #endif
+    D_PRINTLN("Test 6: LoRa");
+    int state = radio.begin();
+    if (state != RADIOLIB_ERR_NONE) { 
+      fallo[5] = true;
+    } else {
+      radio.setSpreadingFactor(9);
+      radio.setBandwidth(125.0);
+      radio.setCodingRate(6);
+      radio.setSyncWord(0xAB);
+      radio.setOutputPower(17);
+      pinMode(LoRa_DI0, INPUT);
+      attachInterrupt(digitalPinToInterrupt(LoRa_DI0), onLoRaDio0Interrupt, RISING);
+    }
 }
 
 void handleSetupFailure(const bool (&fallo)[6]) {
@@ -471,8 +435,6 @@ void formatSDCard() {
   #endif
 }
 
-// --- NUEVAS FUNCIONES DEL CICLO PRINCIPAL (VERSIÓN UNIFICADA CON STRUCT) ---
-
 void updateSensorData() {
   // Esta función SIEMPRE lee los sensores y actualiza el struct global 'flightDataPacket'.
   // Los valores por defecto se asignan si un sensor está deshabilitado.
@@ -498,81 +460,264 @@ void updateSensorData() {
   flightDataPacket.pressure_hpa = (presion != 0.0 ? presion / 100.0 : -1.0);
 
   // --- IMU (Acelerómetro, Giroscopio, Magnetómetro) ---
-  #if IMUConectada
-    sensors_event_t accel_event, mag_event;
-    accel.getEvent(&accel_event);
-    gyroscope.read();
-    mag.getEvent(&mag_event);
-  
-    // Guardar datos crudos en el struct
-    flightDataPacket.acc_x = accel_event.acceleration.x;
-    flightDataPacket.acc_y = accel_event.acceleration.y;
-    flightDataPacket.acc_z = accel_event.acceleration.z;
-    flightDataPacket.gyro_x = gyroscope.g.x * 0.0001527; // Conversión a rad/s
-    flightDataPacket.gyro_y = gyroscope.g.y * 0.0001527;
-    flightDataPacket.gyro_z = gyroscope.g.z * 0.0001527;
-    flightDataPacket.mag_x = mag_event.magnetic.x;
-    flightDataPacket.mag_y = mag_event.magnetic.y;
-    flightDataPacket.mag_z = mag_event.magnetic.z;
-    
-    #define DEBUG_RAW_IMU false // Ponlo en 'false' para desactivar este mensaje
 
-    #if DEBUG_RAW_IMU
-      D_PRINTLN("--- Datos Crudos para el Filtro ---");
-      D_PRINT("  Acc (X,Y,Z): "); D_PRINT(flightDataPacket.acc_x); D_PRINT(", "); D_PRINT(flightDataPacket.acc_y); D_PRINT(", "); D_PRINTLN(flightDataPacket.acc_z);
-      D_PRINT("  Gyro (X,Y,Z): "); D_PRINT(flightDataPacket.gyro_x); D_PRINT(", "); D_PRINT(flightDataPacket.gyro_y); D_PRINT(", "); D_PRINTLN(flightDataPacket.gyro_z);
-      D_PRINT("  Mag (X,Y,Z): "); D_PRINT(flightDataPacket.mag_x); D_PRINT(", "); D_PRINT(flightDataPacket.mag_y); D_PRINT(", "); D_PRINTLN(flightDataPacket.mag_z);
-    #endif
-    
-    // Alimentar el filtro y obtener los ángulos de orientación
-    filter.update(flightDataPacket.gyro_x, flightDataPacket.gyro_y, flightDataPacket.gyro_z, 
-                  flightDataPacket.acc_x, flightDataPacket.acc_y, flightDataPacket.acc_z, 
-                  flightDataPacket.mag_x, flightDataPacket.mag_y, flightDataPacket.mag_z);
-    flightDataPacket.roll = filter.getRoll();
-    flightDataPacket.pitch = filter.getPitch();
-    flightDataPacket.yaw = filter.getYaw();
-  #else
-    // Si la IMU no está conectada, llenar el struct con valores nulos/de error
-    flightDataPacket.acc_x = flightDataPacket.acc_y = flightDataPacket.acc_z = -1;
-    flightDataPacket.gyro_x = flightDataPacket.gyro_y = flightDataPacket.gyro_z = -1;
-    flightDataPacket.mag_x = flightDataPacket.mag_y = flightDataPacket.mag_z = -1;
-    flightDataPacket.roll = flightDataPacket.pitch = flightDataPacket.yaw = -1;
+  sensors_event_t accel_event, mag_event;
+  accel.getEvent(&accel_event);
+  gyroscope.read();
+  mag.getEvent(&mag_event);
+
+  // Guardar datos crudos en el struct
+  flightDataPacket.acc_x = accel_event.acceleration.x;
+  flightDataPacket.acc_y = accel_event.acceleration.y;
+  flightDataPacket.acc_z = accel_event.acceleration.z;
+  flightDataPacket.gyro_x = gyroscope.g.x * 0.0001527; // Conversión a rad/s
+  flightDataPacket.gyro_y = gyroscope.g.y * 0.0001527;
+  flightDataPacket.gyro_z = gyroscope.g.z * 0.0001527;
+  flightDataPacket.mag_x = mag_event.magnetic.x;
+  flightDataPacket.mag_y = mag_event.magnetic.y;
+  flightDataPacket.mag_z = mag_event.magnetic.z;
+  
+  #define DEBUG_RAW_IMU false // Ponlo en 'false' para desactivar este mensaje
+
+  #if DEBUG_RAW_IMU
+    D_PRINTLN("--- Datos Crudos para el Filtro ---");
+    D_PRINT("  Acc (X,Y,Z): "); D_PRINT(flightDataPacket.acc_x); D_PRINT(", "); D_PRINT(flightDataPacket.acc_y); D_PRINT(", "); D_PRINTLN(flightDataPacket.acc_z);
+    D_PRINT("  Gyro (X,Y,Z): "); D_PRINT(flightDataPacket.gyro_x); D_PRINT(", "); D_PRINT(flightDataPacket.gyro_y); D_PRINT(", "); D_PRINTLN(flightDataPacket.gyro_z);
+    D_PRINT("  Mag (X,Y,Z): "); D_PRINT(flightDataPacket.mag_x); D_PRINT(", "); D_PRINT(flightDataPacket.mag_y); D_PRINT(", "); D_PRINTLN(flightDataPacket.mag_z);
   #endif
+  
+  // Alimentar el filtro y obtener los ángulos de orientación
+  filter.update(flightDataPacket.gyro_x, flightDataPacket.gyro_y, flightDataPacket.gyro_z, 
+                flightDataPacket.acc_x, flightDataPacket.acc_y, flightDataPacket.acc_z, 
+                flightDataPacket.mag_x, flightDataPacket.mag_y, flightDataPacket.mag_z);
+  flightDataPacket.roll = filter.getRoll();
+  flightDataPacket.pitch = filter.getPitch();
+  flightDataPacket.yaw = filter.getYaw();
+  
+  // Si la IMU no está conectada, llenar el struct con valores nulos/de error
+  flightDataPacket.acc_x = flightDataPacket.acc_y = flightDataPacket.acc_z = -1;
+  flightDataPacket.gyro_x = flightDataPacket.gyro_y = flightDataPacket.gyro_z = -1;
+  flightDataPacket.mag_x = flightDataPacket.mag_y = flightDataPacket.mag_z = -1;
+  flightDataPacket.roll = flightDataPacket.pitch = flightDataPacket.yaw = -1;
 }
 
-//La máquina de estados está comentada, hay que terminarla
 void runStateMachine() {
-  // Esta función contiene toda la lógica de vuelo.
-  // (La he dejado comentada como en tu código original, puedes activarla cuando quieras)
-  /*
-  float totalAcceleration = sqrt(pow(flightDataPacket.acc_x, 2) + pow(flightDataPacket.acc_y, 2) + pow(flightDataPacket.acc_z, 2));
+  #if MANUAL_STATE_OVERRIDE
+    if (Serial.available() > 0) {
+      char command = Serial.read();
+      if (command == 'n') { // 'n' para "next state" (siguiente estado)
+        // Avanzamos al siguiente estado de la lista
+        currentState = (FlightState)(currentState + 1);
+        
+        // Si llegamos al final, volvemos al principio
+        if (currentState > LANDED) {
+          currentState = DEBUG; // O el estado inicial que prefieras
+        }
+        
+        D_PRINT("\n>>> Transición manual al estado: ");
+        D_PRINTLN(currentState);
+        return; // Salimos de la función para no ejecutar la lógica automática en este ciclo
+      }
+    }
+  #endif
 
   switch (currentState) {
-    case TESTING:
-      // ... tu lógica de TESTING ...
+    case TEST:
+      // --- MODO DE BAJO CONSUMO ---
+      D_PRINTLN("\nEstado: TEST. Entrando en modo de bajo consumo...");
+      D_PRINTLN("Configurando LoRa para recibir el comando de armado...");
+
+      // 1. Ponemos el LoRa en modo de recepción continua.
+      radio.startReceive();
+      
+      // 2. Le decimos a RadioLib que use nuestra ISR 'onLoRaRx' cuando un paquete llegue.
+      
+      
+      // 3. Vaciamos el buffer del puerto serie para asegurarnos de que los mensajes de debug se han enviado.
+      Serial.flush();
+
+      // 4. ¡A DORMIR! El procesador se detiene aquí hasta que el pin DI0 se active.
+      esp_light_sleep_start();
+
+      // --- EL CÓDIGO CONTINÚA AQUÍ DESPUÉS DE DESPERTAR ---
+      
+      // 5. Comprobamos si nos hemos despertado por la razón correcta (llegada de un paquete LoRa)
+      if (loraRxDone) {
+        D_PRINTLN("¡Despertado por señal de LoRa!");
+        loraRxDone = false; // Bajamos la bandera inmediatamente
+
+        // Creamos un buffer para guardar el paquete recibido
+        // Usaremos el struct LoRaPacket, ya que es el que esperamos recibir de la base.
+        LoRaPacket receivedPacket;
+        int state = radio.readData((byte*)&receivedPacket, sizeof(receivedPacket));
+
+        if (state == RADIOLIB_ERR_NONE) {
+          D_PRINTLN("Paquete recibido con éxito.");
+          // Aquí iría la lógica para comprobar el comando.
+          // Por ejemplo, la base podría enviar un paquete donde flight_state = 99 sea el comando de "armar".
+          if (receivedPacket.flight_state == 99) {
+             D_PRINTLN("¡COMANDO DE ARMADO RECIBIDO! Transición a ON_PAD.");
+             currentState = ON_PAD;
+          } else {
+             D_PRINTLN("Paquete recibido, pero no es el comando de armado. Volviendo a dormir.");
+          }
+        } else {
+          D_PRINT("Error al leer el paquete LoRa, código: "); D_PRINTLN(state);
+        }
+      } else {
+        D_PRINTLN("Despertado por una razón desconocida. Volviendo a dormir.");
+      }
       break;
+
     case ON_PAD:
-      // ... tu lógica de ON_PAD ...
+      // En la rampa, listo para el lanzamiento. Calibrando y esperando.
+      // Calibramos la aceleración en reposo una sola vez.
+      if (restingAccelerationZ == 0.0) {
+        restingAccelerationZ = flightDataPacket.acc_z;
+        D_PRINT("Calibración en rampa completada. Accel Z en reposo: "); D_PRINTLN(restingAccelerationZ);
+      }
+      
+      // Transición: Detectar el lanzamiento
+      if (flightDataPacket.acc_z - restingAccelerationZ > LAUNCH_ACCELERATION_THRESHOLD) {
+        D_PRINTLN("¡LANZAMIENTO DETECTADO! Estado: ASCENDING");
+        currentState = ASCENDING;
+      }
       break;
-    // ... etc ...
+
+    case ASCENDING:
+      // Subiendo, buscando el apogeo.
+      altitudeReadings[readingIndex] = flightDataPacket.altitude_bar;
+      readingIndex = (readingIndex + 1) % APOGEE_DETECTION_WINDOW;
+      if (!altitudeBufferFull && readingIndex == 0) {
+        altitudeBufferFull = true;
+      }
+
+      if (altitudeBufferFull) {
+        bool descending = true;
+        for (int i = 0; i < APOGEE_DETECTION_WINDOW; i++) {
+          if (flightDataPacket.altitude_bar >= altitudeReadings[i]) {
+            descending = false;
+            break;
+          }
+        }
+        // Transición: Detección de apogeo
+        if (descending) {
+          D_PRINTLN("¡APOGEO DETECTADO! Estado: APOGEE_DEPLOYMENT");
+          currentState = APOGEE_DEPLOYMENT;
+        }
+      }
+      break;
+
+    case APOGEE_DEPLOYMENT:
+      // Desplegar el primer paracaídas (piloto o "drogue")
+      D_PRINTLN("Activando despliegue del paracaídas piloto...");
+
+      //DESCOMENTAR ESTAS LÍNEAS ANTES DEL LANZAMIENTO
+
+      //digitalWrite(DEPLOYMENT_PIN_DROGUE, HIGH);
+      //delay(1000); // Mantener la carga activa durante 1 segundo
+      //digitalWrite(DEPLOYMENT_PIN_DROGUE, LOW);
+      
+      D_PRINTLN("Descendiendo con paracaídas piloto. Esperando altitud para el principal.");
+      currentState = MAIN_DEPLOYMENT; // Transición inmediata al siguiente estado de espera
+      break;
+
+    case MAIN_DEPLOYMENT:
+      // Esperando la altitud para el segundo despliegue.
+      // Transición: Altura por debajo del umbral
+      if (flightDataPacket.altitude_bar <= MAIN_DEPLOYMENT_ALTITUDE) {
+        D_PRINTLN("¡ALTITUD ALCANZADA! Desplegando paracaídas principal.");
+
+        //DESCOMENTAR ESTAS LÍNEAS ANTES DEL LANZAMIENTO
+
+        //digitalWrite(DEPLOYMENT_PIN_MAIN, HIGH);
+        //delay(1000); // Mantener la carga activa durante 1 segundo
+        //digitalWrite(DEPLOYMENT_PIN_MAIN, LOW);
+        
+        lastLandedAltitude = flightDataPacket.altitude_bar;
+        landedTimer = millis();
+        currentState = LANDED; // Transición al estado final
+      }
+      break;
+
+    case LANDED:
+      // El cohete está en el suelo o a punto de estarlo.
+      D_PRINTLN("En fase de recuperación. Encendiendo buzzer...");
+      //digitalWrite(BUZZER_PIN, HIGH); // Encender el buzzer
+      
+      // La telemetría sigue enviando las coordenadas.
+      // La lógica para detectar que está en el suelo podría ir aquí,
+      // por ejemplo, si la altitud no cambia durante 5 segundos.
+      if (abs(flightDataPacket.altitude_bar - lastLandedAltitude) < 2.0) { // Si la altitud varía menos de 2m
+        if (millis() - landedTimer > LANDING_STABILITY_DURATION) {
+          D_PRINTLN("¡ATERRIZAJE CONFIRMADO!");
+          // Aquí podrías detener el buzzer o cambiar el patrón de pitido.
+        }
+      } else {
+        // Si la altitud vuelve a cambiar, reiniciamos el temporizador
+        lastLandedAltitude = flightDataPacket.altitude_bar;
+        landedTimer = millis();
+      }
+      break;
   }
-  */
 }
 
 void handleTelemetry() {
-  // Esta función se encarga de la telemetría LoRa, que se ejecuta con menos frecuencia.
-  if (transmissionFinished) {
-    #if usarLoRa
-      #if debugLoRa
-        transmissionFinished = false;
-        enviarDatosPorLoRa("Esto es una prueba del LoRa"); // Esta función ahora es solo para debug
-      #else
-        transmissionFinished = false;
-        // Enviamos el struct de telemetría directamente
-        enviarPaqueteLoRa(&flightDataPacket, sizeof(flightDataPacket));
-      #endif
+  if (currentState != TEST && loraTxDone) {
+
+
+    #if debugLoRa
+      loraTxDone = false;
+      enviarDatosPorLoRa("Esto es una prueba del LoRa");
+    #else
+      loraTxDone = false;
+      
+      // --- PREPARAR EL PAQUETE LORA OPTIMIZADO ---
+      LoRaPacket loraPacket; // Crea una instancia del paquete pequeño
+      loraPacket.flight_state = (uint8_t)currentState;
+      loraPacket.altitude_bar = flightDataPacket.altitude_bar;
+      loraPacket.speed_kmph = flightDataPacket.speed_kmph;
+      loraPacket.pitch = flightDataPacket.pitch;
+      loraPacket.yaw = flightDataPacket.yaw;
+
+      // Enviamos el paquete PEQUEÑO
+      enviarPaqueteLoRa(&loraPacket, sizeof(loraPacket));
     #endif
+    
   }
+}
+
+// --- NUEVA FUNCIÓN PARA EL FEEDBACK VISUAL ---
+void handleLEDFeedback() {
+  #if DEBUG_MODE // Solo compilamos esta función si el modo debug está activado
+    int blinkInterval = 0; // Intervalo en milisegundos para medio ciclo (tiempo ON o tiempo OFF)
+
+    switch (currentState) {
+      case APOGEE_DEPLOYMENT:
+        // Parpadeo a 1 Hz (500ms ON, 500ms OFF)
+        blinkInterval = 500;
+        break;
+      
+      case MAIN_DEPLOYMENT:
+        // Parpadeo a 5 Hz (100ms ON, 100ms OFF)
+        blinkInterval = 100;
+        break;
+
+      default:
+        // En cualquier otro estado, el LED debe estar apagado
+        digitalWrite(LED_BUILTIN, LOW);
+        ledState = LOW;
+        blinkInterval = 0;
+        break;
+    }
+
+    // Lógica de parpadeo no bloqueante
+    if (blinkInterval > 0 && millis() - lastBlinkTime > blinkInterval) {
+      lastBlinkTime = millis();
+      ledState = !ledState; // Invertir el estado del LED
+      digitalWrite(LED_BUILTIN, ledState);
+    }
+  #endif
 }
 
 void setup() {
@@ -621,6 +766,7 @@ void setup() {
 }
 
 void loop() {
+  //Con todo activo el tiempo de loop es de unos 30ms (escribiendo en la tarjeta microSD de 32GB)
   int microsTiempo = micros();
   // 1. Leer todos los sensores y actualizar el struct 'flightDataPacket' con los datos más recientes.
   updateSensorData();
@@ -635,8 +781,11 @@ void loop() {
   // 4. Enviar el struct 'flightDataPacket' por LoRa si la radio está disponible.
   handleTelemetry();
 
+  //Función para feedback con el LED de la placa
+  handleLEDFeedback();
+
   // 5. (Opcional) Imprimir el contenido del struct si 'verMensaje' está activado.
-    #if verMensaje
+  #if verMensaje
     // Imprimimos los valores directamente desde el struct para asegurarnos
     // de que lo que vemos es lo que se guarda/envía en este ciclo.
     D_PRINTLN("\n--- Contenido del Struct en este Ciclo ---");
@@ -689,7 +838,6 @@ void loop() {
     D_PRINT("  Pitch: "); D_PRINT(flightDataPacket.pitch, 2); D_PRINTLN(" deg");
     D_PRINT("  Yaw:   "); D_PRINT(flightDataPacket.yaw, 2); D_PRINTLN(" deg");
     
+    D_PRINT("Tiempo de loop: "); D_PRINT(micros()-microsTiempo); D_PRINTLN("us");
   #endif
-  
-  Serial.print("Tiempo de loop: "); Serial.print(micros()-microsTiempo); Serial.println("us");
 }

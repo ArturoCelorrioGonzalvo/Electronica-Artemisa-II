@@ -2,59 +2,69 @@
 #include <RadioLib.h>
 
 // --- PINES DE CONTROL DEL MÓDULO LORA ---
-// Asegúrate de que coincidan con tu cableado
-#define LoRa_CS      10  // Pin para Chip Select (CS). Puedes usar el que quieras.
-#define LoRa_DI0     16   // Pin para la interrupción (DIO0).
-#define LoRa_RST     15   // Pin para el Reset.
+#define LoRa_CS      10
+#define LoRa_DI0     16
+#define LoRa_RST     15
 
 // Objeto de RadioLib
-SX1276 radio = new Module(LoRa_CS, LoRa_DI0, LoRa_RST);
+SX1276 radio = Module(LoRa_CS, LoRa_DI0, LoRa_RST);
 
-// Estructura de datos (idéntica a la del emisor)
-struct TelemetryData {
-  int fix;
-  float hdop;
-  uint8_t hour;
-  uint8_t minute;
-  uint8_t second;
-  double latitude;
-  double longitude;
-  float speed_kmph; //2 decimales
-  float altitude_gps; //1 decimal
-  float pressure_hpa; //Sin decimales
-  float altitude_bar; //1 decimal
-  float temperature; //2 decimales
-  float acc_x, acc_y, acc_z;
-  float gyro_x, gyro_y, gyro_z;
-  float mag_x, mag_y, mag_z;
-  float roll, pitch, yaw;
-  
+// --- NUEVO: Enum de los estados de vuelo ---
+// ¡CRÍTICO! Esta enumeración DEBE SER IDÉNTICA a la del emisor.
+// --- MÁQUINA DE ESTADOS ACTUALIZADA ---
+enum FlightState {
+  DEBUG,
+  TEST,
+  ON_PAD,
+  ASCENDING,
+  APOGEE_DEPLOYMENT,
+  MAIN_DEPLOYMENT,
+  LANDED
 };
 
-TelemetryData packet;
+// --- NUEVO: Struct optimizado para LoRa ---
+// Esta estructura debe ser 100% idéntica a la que usa el emisor para enviar.
+// Usamos __attribute__((packed)) como buena práctica para evitar problemas de alineación de memoria.
+struct __attribute__((packed)) LoRaPacket {
+  uint8_t flight_state;
+  float altitude_bar;
+  float speed_kmph;
+  float roll;
+  float pitch;
+  float yaw;
+};
 
-// --- LA MAGIA DE LAS INTERRUPCIONES ---
-// Esta es la "bandera" que la interrupción levantará.
-// "volatile" le dice al compilador que esta variable puede cambiar en cualquier momento.
+// --- Variable global actualizada al nuevo tipo ---
+LoRaPacket loraPacket;
+
+// --- INTERRUPCIÓN (sin cambios) ---
 volatile bool packetReceived = false;
-
-// Esta es la Rutina de Servicio de Interrupción (ISR).
-// Debe ser lo más rápida posible. ¡No uses Serial.print() aquí dentro!
-// IRAM_ATTR es crucial en ESP32 para que la función se guarde en RAM y sea más rápida.
 void IRAM_ATTR onReceive() {
-  // Un paquete ha llegado, levantamos la bandera.
   packetReceived = true;
+}
+
+// --- NUEVA FUNCIÓN AUXILIAR ---
+// Convierte el número del estado de vuelo a un String legible.
+const char* getStateString(uint8_t state) {
+  switch (state) {
+    case DEBUG:             return "DEBUG";
+    case TEST:              return "TEST (Low Power)";
+    case ON_PAD:            return "ON PAD (Ready)";
+    case ASCENDING:         return "ASCENDING";
+    case APOGEE_DEPLOYMENT: return "DROGUE DEPLOY";
+    case MAIN_DEPLOYMENT:   return "MAIN DEPLOY";
+    case LANDED:            return "LANDED (Recovery)";
+    default:                return "UNKNOWN";
+  }
 }
 
 void setup() {
   Serial.begin(115200);
   delay(1000);
-  Serial.println("Receptor LoRa con Interrupciones - Esperando paquetes...");
+  Serial.println("Receptor LoRa (Modo Telemetría Optimizada) - Esperando paquetes...");
 
-  // Inicializar SPI con pines por defecto del ESP32-S3
   SPI.begin();
 
-  // Inicializar LoRa
   int state = radio.begin();
   if (state != RADIOLIB_ERR_NONE) {
     Serial.print(F("Fallo al iniciar, código de error: "));
@@ -62,21 +72,16 @@ void setup() {
     while (true);
   }
 
-  // Configurar parámetros (idénticos al emisor)
+  // --- PARÁMETROS IDÉNTICOS AL EMISOR (sin cambios) ---
   radio.setSpreadingFactor(9);
   radio.setBandwidth(125.0);
   radio.setCodingRate(6);
   radio.setSyncWord(0xAB);
   
-  // --- CONFIGURACIÓN DE LA INTERRUPCIÓN ---
-  // 1. Configurar el pin DI0 como entrada
+  // --- CONFIGURACIÓN DE INTERRUPCIÓN (sin cambios) ---
   pinMode(LoRa_DI0, INPUT);
-  // 2. "Enganchar" nuestra función 'onReceive' a la interrupción del pin.
-  // Se disparará cuando el pin suba de LOW a HIGH (RISING).
   attachInterrupt(digitalPinToInterrupt(LoRa_DI0), onReceive, RISING);
 
-  // Ponemos el LoRa en modo de recepción. Ahora esperará a que llegue un paquete
-  // y activará la interrupción por su cuenta.
   state = radio.startReceive();
   if (state != RADIOLIB_ERR_NONE) {
     Serial.print(F("Fallo al iniciar la recepción, código de error: "));
@@ -86,46 +91,37 @@ void setup() {
 }
 
 void loop() {
-  // El loop principal ahora solo hace una cosa:
-  // comprobar si la bandera 'packetReceived' ha sido levantada por la interrupción.
   if (packetReceived) {
-    // Si la bandera está levantada, significa que tenemos un paquete.
+    // Bajamos la bandera inmediatamente
+    packetReceived = false;
     
-    // Leemos los datos del paquete.
-    int state = radio.readData((byte*)&packet, sizeof(packet));
+    // --- LECTURA ACTUALIZADA ---
+    // Leemos los datos en nuestro nuevo struct 'loraPacket'
+    int state = radio.readData((byte*)&loraPacket, sizeof(loraPacket));
 
     if (state == RADIOLIB_ERR_NONE) {
-      // Paquete leído con éxito. Lo imprimimos.
+      // --- SECCIÓN DE IMPRESIÓN REESCRITA ---
       Serial.println();
-      Serial.println(F("--- Paquete Recibido (vía Interrupción) ---"));
-      Serial.print(F("  HDOP: ")); Serial.println(packet.hdop);
-      Serial.print(F("  Hora: ")); Serial.print(packet.hour); Serial.print(":"); Serial.print(packet.minute ); Serial.print(":"); Serial.println(packet.second);
-      Serial.print(F("  Latitud: ")); Serial.println(packet.latitude);
-      Serial.print(F("  Longitud: ")); Serial.println(packet.longitude);
-      Serial.print(F("  Velocidad: ")); Serial.println(packet.speed_kmph);
-      Serial.print(F("  Altura del GPS: ")); Serial.println(packet.altitude_gps);
-      Serial.print(F("  Presión (hPa): ")); Serial.println(packet.pressure_hpa);
-      Serial.print(F("  Altura del barómetro: ")); Serial.println(packet.altitude_bar);
-      Serial.print(F("  Temperatura: ")); Serial.println(packet.temperature);
-      Serial.print(F("  Aceleración eje X: ")); Serial.println(packet.acc_x);
-      Serial.print(F("  Aceleración eje Y: ")); Serial.println(packet.acc_y);
-      Serial.print(F("  Aceleración eje Z: ")); Serial.println(packet.acc_z);
-      Serial.print(F("  Tiempo desde el último fix: ")); Serial.println(packet.fix);
-      //Serial.print(F("  Tamaño paquete: ")); Serial.println(sizeof(packet));
-      Serial.print(F("  RSSI: ")); Serial.print(radio.getRSSI()); Serial.println(F(" dBm"));
-      Serial.print(F("  SNR: ")); Serial.print(radio.getSNR()); Serial.println(F(" dB"));
-      Serial.println(F("---------------------------------------------"));
+      Serial.println(F("--- Paquete de Telemetría Recibido ---"));
+      
+      // Imprimimos los campos del nuevo LoRaPacket
+      Serial.print(F("  Estado de Vuelo:     ")); Serial.println(getStateString(loraPacket.flight_state));
+      Serial.print(F("  Altitud Barométrica: ")); Serial.print(loraPacket.altitude_bar, 2); Serial.println(F(" m"));
+      Serial.print(F("  Velocidad GPS:       ")); Serial.print(loraPacket.speed_kmph, 2); Serial.println(F(" km/h"));
+      Serial.print(F("  Roll:                ")); Serial.print(loraPacket.roll, 2); Serial.println(F(" deg"));
+      Serial.print(F("  Pitch:               ")); Serial.print(loraPacket.pitch, 2); Serial.println(F(" deg"));
+      Serial.print(F("  Yaw:                 ")); Serial.print(loraPacket.yaw, 2); Serial.println(F(" deg"));
+      
+      // La información de la señal sigue siendo muy útil
+      Serial.print(F("  RSSI:                ")); Serial.print(radio.getRSSI()); Serial.println(F(" dBm"));
+      Serial.print(F("  SNR:                 ")); Serial.print(radio.getSNR()); Serial.println(F(" dB"));
+      Serial.println(F("--------------------------------------"));
+
     } else if (state == RADIOLIB_ERR_CRC_MISMATCH) {
       Serial.println(F("Error de CRC, paquete corrupto descartado."));
     }
 
-    // --- PASOS CRUCIALES DE REINICIO ---
-    // 1. Bajamos la bandera para no procesar este paquete de nuevo.
-    packetReceived = false;
-
-    // 2. Volvemos a poner el LoRa en modo de recepción para esperar el SIGUIENTE paquete.
+    // Volvemos a poner el LoRa en modo de recepción
     radio.startReceive();
   }
-  // Si no hay interrupción, el loop no hace absolutamente nada.
-  // Esto es muchísimo más eficiente.
 }
