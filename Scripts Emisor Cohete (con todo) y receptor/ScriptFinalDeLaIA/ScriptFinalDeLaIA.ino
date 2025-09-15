@@ -30,11 +30,11 @@
 #define borrarSD true
 
 #define debugResto debugGPS || debugBar || debugIMU
-#define debugLoRa false
+#define debugLoRa true
 
 
 // Definir pines
-#define P0  1013.25//presión a nivel del mar
+#define P0  1013.25//en hPa
 
 
 #define SDA_PIN 5  
@@ -44,14 +44,14 @@
 
 //Generales
 #define MOSI 11
-#define SCK 13
-#define MISO 12
+#define SCK 12
+#define MISO 10
 
 //SD
-#define SD_CS 3
+#define SD_CS 13
 
 //LoRa
-#define LoRa_CS 10 
+#define LoRa_CS 9 
 #define LoRa_RST 7
 #define LoRa_DI0 8
 
@@ -98,7 +98,7 @@ GND GND
 // --- DEFINICIONES PARA EL DESPLIEGUE ---
 #define DEPLOYMENT_PIN 2 // Este pin hay que elegirlo para el despliegue del paracaídas, de momento uso el pin 2 que lo tengo libre
 
-#define MANUAL_STATE_OVERRIDE true //cambiar a false para el vuelo real
+#define MANUAL_STATE_OVERRIDE false //cambiar a false para el vuelo real
 
 //Configuración del acelerómetro
 Adafruit_LSM303_Accel_Unified accel = Adafruit_LSM303_Accel_Unified(54321);
@@ -127,14 +127,16 @@ struct TelemetryData {
   float roll, pitch, yaw;
 };
 
-struct LoRaPacket {
+struct __attribute__((packed)) LoRaPacket {
   uint8_t flight_state;
   float altitude_bar;
   float speed_kmph;
+  float roll;
   float pitch;
   float yaw;
+  float latitude;   
+  float longitude; 
 };
-
 // --- DEFINICIONES PARA PRUEBA MANUAL DE LA MÁQUINA DE ESTADOS ---
 
 
@@ -280,14 +282,16 @@ void enviarPaqueteLoRa(const void* data, size_t size) {
 
   if (state == RADIOLIB_ERR_NONE) {
     // El envío ha comenzado en segundo plano.
-    Serial.println("✅ Transmisión LoRa iniciada...");
+    D_PRINTLN("✅ Transmisión LoRa iniciada..."); //Cambiar a D_PRINTLN
+    
   } else {
     // Si hubo un error al iniciar, no habrá interrupción.
     // Debemos liberar la bandera manualmente para poder reintentar.
     Serial.print("❌ Fallo al iniciar envío LoRa, código de error: ");
     Serial.println(state);
-    loraTxDone = true;
+    
   }
+  loraTxDone = true;
 }
 
 // Mantenemos tu función original para los casos de debug.
@@ -374,19 +378,19 @@ void setupPeripherals(bool (&fallo)[6]) {
     fallo[4] = true;
   }
 
-    D_PRINTLN("Test 6: LoRa");
-    int state = radio.begin();
-    if (state != RADIOLIB_ERR_NONE) { 
-      fallo[5] = true;
-    } else {
-      radio.setSpreadingFactor(9);
-      radio.setBandwidth(125.0);
-      radio.setCodingRate(6);
-      radio.setSyncWord(0xAB);
-      radio.setOutputPower(17);
-      pinMode(LoRa_DI0, INPUT);
-      attachInterrupt(digitalPinToInterrupt(LoRa_DI0), onLoRaDio0Interrupt, RISING);
-    }
+  D_PRINTLN("Test 6: LoRa");
+  int state = radio.begin();
+  if (state != RADIOLIB_ERR_NONE) { 
+    fallo[5] = true;
+  } else {
+    radio.setSpreadingFactor(9);
+    radio.setBandwidth(125.0);
+    radio.setCodingRate(6);
+    radio.setSyncWord(0xAB);
+    radio.setOutputPower(17);
+    pinMode(LoRa_DI0, INPUT);
+    attachInterrupt(digitalPinToInterrupt(LoRa_DI0), onLoRaDio0Interrupt, RISING);
+  }
 }
 
 void handleSetupFailure(const bool (&fallo)[6]) {
@@ -439,8 +443,6 @@ void updateSensorData() {
   // Esta función SIEMPRE lee los sensores y actualiza el struct global 'flightDataPacket'.
   // Los valores por defecto se asignan si un sensor está deshabilitado.
 
-  smartDelay(10);
-
   // --- GPS ---
   flightDataPacket.fix = gps.location.age();
   flightDataPacket.latitude = gps.location.isValid() ? gps.location.lat() : -1.0;
@@ -455,7 +457,7 @@ void updateSensorData() {
   // --- Barómetro ---
   flightDataPacket.temperature = bmp280.getTemperature();
   uint32_t presion = bmp280.getPressure();
-  //flightDataPacket.altitude_bar = bmp280.calAltitude(presion, P0) - initialAltitude;//revisar altitud inicial (-3km en referencia)
+  //flightDataPacket.altitude_bar = bmp280.calAltitude(presion, P0) - initialAltitude;
   flightDataPacket.altitude_bar = bmp280.calAltitude(presion, P0);
   flightDataPacket.pressure_hpa = (presion != 0.0 ? presion / 100.0 : -1.0);
 
@@ -495,10 +497,6 @@ void updateSensorData() {
   flightDataPacket.yaw = filter.getYaw();
   
   // Si la IMU no está conectada, llenar el struct con valores nulos/de error
-  flightDataPacket.acc_x = flightDataPacket.acc_y = flightDataPacket.acc_z = -1;
-  flightDataPacket.gyro_x = flightDataPacket.gyro_y = flightDataPacket.gyro_z = -1;
-  flightDataPacket.mag_x = flightDataPacket.mag_y = flightDataPacket.mag_z = -1;
-  flightDataPacket.roll = flightDataPacket.pitch = flightDataPacket.yaw = -1;
 }
 
 void runStateMachine() {
@@ -522,6 +520,9 @@ void runStateMachine() {
   #endif
 
   switch (currentState) {
+    case DEBUG: 
+          D_PRINTLN("En estado DEBUG"); 
+    break;
     case TEST:
       // --- MODO DE BAJO CONSUMO ---
       D_PRINTLN("\nEstado: TEST. Entrando en modo de bajo consumo...");
@@ -535,7 +536,7 @@ void runStateMachine() {
       
       // 3. Vaciamos el buffer del puerto serie para asegurarnos de que los mensajes de debug se han enviado.
       Serial.flush();
-
+      /*
       // 4. ¡A DORMIR! El procesador se detiene aquí hasta que el pin DI0 se active.
       esp_light_sleep_start();
 
@@ -567,6 +568,7 @@ void runStateMachine() {
       } else {
         D_PRINTLN("Despertado por una razón desconocida. Volviendo a dormir.");
       }
+      */
       break;
 
     case ON_PAD:
@@ -677,8 +679,11 @@ void handleTelemetry() {
       loraPacket.flight_state = (uint8_t)currentState;
       loraPacket.altitude_bar = flightDataPacket.altitude_bar;
       loraPacket.speed_kmph = flightDataPacket.speed_kmph;
+      loraPacket.roll = flightDataPacket.roll;
       loraPacket.pitch = flightDataPacket.pitch;
       loraPacket.yaw = flightDataPacket.yaw;
+      loraPacket.latitude = flightDataPacket.latitude;
+      loraPacket.longitude = flightDataPacket.longitude;
 
       // Enviamos el paquete PEQUEÑO
       enviarPaqueteLoRa(&loraPacket, sizeof(loraPacket));
@@ -722,7 +727,7 @@ void handleLEDFeedback() {
 
 void setup() {
   Serial.begin(115220);
-  Serial2.begin(9600, SERIAL_8N1, 44, 43); 
+  Serial2.begin(9600, SERIAL_8N1, 43, 44); 
   delay(2000); // Dar tiempo a que todo se estabilice
 
   D_PRINTLN("\n--- INICIANDO AVIÓNICA ARTEMISA II ---");
@@ -766,8 +771,10 @@ void setup() {
 }
 
 void loop() {
+  smartDelay(10);
+  
   //Con todo activo el tiempo de loop es de unos 30ms (escribiendo en la tarjeta microSD de 32GB)
-  int microsTiempo = micros();
+  long microsLoop = micros(); // Medimos el tiempo al inicio del loop
   // 1. Leer todos los sensores y actualizar el struct 'flightDataPacket' con los datos más recientes.
   updateSensorData();
 
@@ -776,13 +783,13 @@ void loop() {
 
   // 3. Guardar el struct 'flightDataPacket' en la tarjeta SD en cada ciclo.
   //    La función 'guardarDatosEnSD' ya sabe cómo convertir el struct a CSV.
-  guardarDatosEnSD(flightDataPacket);
+  //guardarDatosEnSD(flightDataPacket);
 
   // 4. Enviar el struct 'flightDataPacket' por LoRa si la radio está disponible.
   handleTelemetry();
 
   //Función para feedback con el LED de la placa
-  handleLEDFeedback();
+  //handleLEDFeedback();
 
   // 5. (Opcional) Imprimir el contenido del struct si 'verMensaje' está activado.
   #if verMensaje
@@ -838,6 +845,10 @@ void loop() {
     D_PRINT("  Pitch: "); D_PRINT(flightDataPacket.pitch, 2); D_PRINTLN(" deg");
     D_PRINT("  Yaw:   "); D_PRINT(flightDataPacket.yaw, 2); D_PRINTLN(" deg");
     
-    D_PRINT("Tiempo de loop: "); D_PRINT(micros()-microsTiempo); D_PRINTLN("us");
+    
   #endif
+  microsLoop = micros() - microsLoop;
+  D_PRINT("El loop dura "); 
+  D_PRINT(microsLoop);
+  D_PRINTLN("us");
 }

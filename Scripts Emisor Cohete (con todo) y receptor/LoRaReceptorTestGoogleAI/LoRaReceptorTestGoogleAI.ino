@@ -7,7 +7,7 @@
 #define LoRa_RST     15
 
 // Objeto de RadioLib
-SX1276 radio = Module(LoRa_CS, LoRa_DI0, LoRa_RST);
+SX1278 radio = new Module(LoRa_CS, LoRa_DI0, LoRa_RST);
 
 // --- NUEVO: Enum de los estados de vuelo ---
 // ¡CRÍTICO! Esta enumeración DEBE SER IDÉNTICA a la del emisor.
@@ -32,6 +32,8 @@ struct __attribute__((packed)) LoRaPacket {
   float roll;
   float pitch;
   float yaw;
+  float latitude;   
+  float longitude; 
 };
 
 // --- Variable global actualizada al nuevo tipo ---
@@ -65,24 +67,25 @@ void setup() {
 
   SPI.begin();
 
-  int state = radio.begin();
+  int state = radio->begin();
   if (state != RADIOLIB_ERR_NONE) {
     Serial.print(F("Fallo al iniciar, código de error: "));
     Serial.println(state);
     while (true);
   }
-
+  Serial.println("Inicio correcto");
   // --- PARÁMETROS IDÉNTICOS AL EMISOR (sin cambios) ---
-  radio.setSpreadingFactor(9);
-  radio.setBandwidth(125.0);
-  radio.setCodingRate(6);
-  radio.setSyncWord(0xAB);
+  radio->setSpreadingFactor(9);
+  radio->setBandwidth(125.0);
+  radio->setCodingRate(6);
+  radio->setSyncWord(0xAB);
+  radio->setOutputPower(17);
   
   // --- CONFIGURACIÓN DE INTERRUPCIÓN (sin cambios) ---
   pinMode(LoRa_DI0, INPUT);
   attachInterrupt(digitalPinToInterrupt(LoRa_DI0), onReceive, RISING);
 
-  state = radio.startReceive();
+  state = radio->startReceive();
   if (state != RADIOLIB_ERR_NONE) {
     Serial.print(F("Fallo al iniciar la recepción, código de error: "));
     Serial.println(state);
@@ -97,7 +100,7 @@ void loop() {
     
     // --- LECTURA ACTUALIZADA ---
     // Leemos los datos en nuestro nuevo struct 'loraPacket'
-    int state = radio.readData((byte*)&loraPacket, sizeof(loraPacket));
+    int state = radio->readData((byte*)&loraPacket, sizeof(loraPacket));
 
     if (state == RADIOLIB_ERR_NONE) {
       // --- SECCIÓN DE IMPRESIÓN REESCRITA ---
@@ -111,10 +114,12 @@ void loop() {
       Serial.print(F("  Roll:                ")); Serial.print(loraPacket.roll, 2); Serial.println(F(" deg"));
       Serial.print(F("  Pitch:               ")); Serial.print(loraPacket.pitch, 2); Serial.println(F(" deg"));
       Serial.print(F("  Yaw:                 ")); Serial.print(loraPacket.yaw, 2); Serial.println(F(" deg"));
-      
+      Serial.print(F("  Latitud:             ")); Serial.print(loraPacket.latitude, 2); Serial.println(F(" deg"));
+      Serial.print(F("  Longitud:            ")); Serial.print(loraPacket.longitude, 2); Serial.println(F(" deg"));
+
       // La información de la señal sigue siendo muy útil
-      Serial.print(F("  RSSI:                ")); Serial.print(radio.getRSSI()); Serial.println(F(" dBm"));
-      Serial.print(F("  SNR:                 ")); Serial.print(radio.getSNR()); Serial.println(F(" dB"));
+      Serial.print(F("  RSSI:                ")); Serial.print(radio->getRSSI()); Serial.println(F(" dBm"));
+      Serial.print(F("  SNR:                 ")); Serial.print(radio->getSNR()); Serial.println(F(" dB"));
       Serial.println(F("--------------------------------------"));
 
     } else if (state == RADIOLIB_ERR_CRC_MISMATCH) {
@@ -122,6 +127,6 @@ void loop() {
     }
 
     // Volvemos a poner el LoRa en modo de recepción
-    radio.startReceive();
+    radio->startReceive();
   }
 }
