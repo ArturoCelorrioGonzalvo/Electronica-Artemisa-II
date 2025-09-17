@@ -9,8 +9,8 @@
 #define SD_MISO 12
 #define SD_SCK 13
 
-const char* ssid = "Galaxy";    // MIWIFI_MXvM
-const char* password = "00000000";  //  Rr7mr33s
+const char* ssid = "telekino";    // MIWIFI_MXvM Galaxy
+const char* password = "LeonardoTQ1852";  //  Rr7mr33s 00000000
 
 AsyncWebServer server(80);
 
@@ -39,7 +39,7 @@ void setup() {
     if (!SD.begin(SD_CS)) {
         Serial.println("Error al inicializar la tarjeta SD. Reiniciando en 5 segundos...");
         delay(5000);
-        ESP.restart();  // Reinicia el ESP32 si la SD no se monta correctamente
+        //ESP.restart();  // Reinicia el ESP32 si la SD no se monta correctamente
     }
 
     Serial.println("Tarjeta SD montada correctamente.");

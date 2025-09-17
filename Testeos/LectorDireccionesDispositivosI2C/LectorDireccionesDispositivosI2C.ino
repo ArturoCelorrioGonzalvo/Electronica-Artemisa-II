@@ -22,13 +22,13 @@ void loop() {
     if (error == 0) {
       Serial.print("Dispositivo I2C encontrado en la dirección 0x");
       if (address < 16) Serial.print("0");
-      Serial.print(address, HEX);
+      Serial.println(address, HEX);
       
-      // Añadimos una comprobación para identificar los dispositivos conocidos
-      if (address == 0x1D || address == 0x1E) Serial.print("  <-- Probablemente LSM303 (Acel/Mag)");
-      if (address == 0x6A || address == 0x6B) Serial.print("  <-- Probablemente L3GD20 (Giroscopio)");
-      if (address == 0x76 || address == 0x77) Serial.print("  <-- Probablemente BMP280 (Barómetro)");
-      Serial.println();
+      // // Añadimos una comprobación para identificar los dispositivos conocidos
+      // if (address == 0x1D || address == 0x1E) Serial.print("  <-- Probablemente LSM303 (Acel/Mag)");
+      // if (address == 0x6A || address == 0x6B) Serial.print("  <-- Probablemente L3GD20 (Giroscopio)");
+      // if (address == 0x76 || address == 0x77) Serial.print("  <-- Probablemente BMP280 (Barómetro)");
+      // Serial.println();
       
       nDevices++;
     }
