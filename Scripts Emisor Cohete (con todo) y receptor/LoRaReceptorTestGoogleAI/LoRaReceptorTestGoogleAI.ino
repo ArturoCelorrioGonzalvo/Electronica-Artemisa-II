@@ -67,7 +67,7 @@ void setup() {
 
   SPI.begin();
 
-  int state = radio->begin();
+  int state = radio.begin();
   if (state != RADIOLIB_ERR_NONE) {
     Serial.print(F("Fallo al iniciar, código de error: "));
     Serial.println(state);
@@ -75,17 +75,17 @@ void setup() {
   }
   Serial.println("Inicio correcto");
   // --- PARÁMETROS IDÉNTICOS AL EMISOR (sin cambios) ---
-  radio->setSpreadingFactor(9);
-  radio->setBandwidth(125.0);
-  radio->setCodingRate(6);
-  radio->setSyncWord(0xAB);
-  radio->setOutputPower(17);
+  radio.setSpreadingFactor(9);
+  radio.setBandwidth(125.0);
+  radio.setCodingRate(6);
+  radio.setSyncWord(0xAB);
+  radio.setOutputPower(17);
   
   // --- CONFIGURACIÓN DE INTERRUPCIÓN (sin cambios) ---
   pinMode(LoRa_DI0, INPUT);
   attachInterrupt(digitalPinToInterrupt(LoRa_DI0), onReceive, RISING);
 
-  state = radio->startReceive();
+  state = radio.startReceive();
   if (state != RADIOLIB_ERR_NONE) {
     Serial.print(F("Fallo al iniciar la recepción, código de error: "));
     Serial.println(state);
@@ -100,8 +100,9 @@ void loop() {
     
     // --- LECTURA ACTUALIZADA ---
     // Leemos los datos en nuestro nuevo struct 'loraPacket'
-    int state = radio->readData((byte*)&loraPacket, sizeof(loraPacket));
-
+    int state = radio.readData((byte*)&loraPacket, sizeof(loraPacket));
+    Serial.println(state);
+    Serial.println(sizeof(loraPacket));
     if (state == RADIOLIB_ERR_NONE) {
       // --- SECCIÓN DE IMPRESIÓN REESCRITA ---
       Serial.println();
@@ -118,8 +119,8 @@ void loop() {
       Serial.print(F("  Longitud:            ")); Serial.print(loraPacket.longitude, 2); Serial.println(F(" deg"));
 
       // La información de la señal sigue siendo muy útil
-      Serial.print(F("  RSSI:                ")); Serial.print(radio->getRSSI()); Serial.println(F(" dBm"));
-      Serial.print(F("  SNR:                 ")); Serial.print(radio->getSNR()); Serial.println(F(" dB"));
+      Serial.print(F("  RSSI:                ")); Serial.print(radio.getRSSI()); Serial.println(F(" dBm"));
+      Serial.print(F("  SNR:                 ")); Serial.print(radio.getSNR()); Serial.println(F(" dB"));
       Serial.println(F("--------------------------------------"));
 
     } else if (state == RADIOLIB_ERR_CRC_MISMATCH) {
@@ -127,6 +128,6 @@ void loop() {
     }
 
     // Volvemos a poner el LoRa en modo de recepción
-    radio->startReceive();
+    radio.startReceive();
   }
 }

@@ -33,6 +33,7 @@
 #define P0  1013.25//presión a nivel del mar
 
 
+//Pines I2C
 #define SDA_PIN 5  
 #define SCL_PIN 4   
 
