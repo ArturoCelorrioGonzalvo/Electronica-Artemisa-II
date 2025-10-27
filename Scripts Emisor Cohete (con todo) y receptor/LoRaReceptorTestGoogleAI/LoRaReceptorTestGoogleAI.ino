@@ -32,6 +32,9 @@ struct __attribute__((packed)) LoRaPacket {
   float roll;
   float pitch;
   float yaw;
+  float acc_x; 
+  float acc_y;
+  float acc_z;
   float latitude;   
   float longitude; 
 };
@@ -115,6 +118,9 @@ void loop() {
       Serial.print(F("  Roll:                ")); Serial.print(loraPacket.roll, 2); Serial.println(F(" deg"));
       Serial.print(F("  Pitch:               ")); Serial.print(loraPacket.pitch, 2); Serial.println(F(" deg"));
       Serial.print(F("  Yaw:                 ")); Serial.print(loraPacket.yaw, 2); Serial.println(F(" deg"));
+      Serial.print(F("  Acc X:               ")); Serial.print(loraPacket.acc_x, 2); Serial.println(F(" m/s^2"));
+      Serial.print(F("  Acc Y:               ")); Serial.print(loraPacket.acc_y, 2); Serial.println(F(" m/s^2"));
+      Serial.print(F("  Acc Z:               ")); Serial.print(loraPacket.acc_z, 2); Serial.println(F(" m/s^2"));
       Serial.print(F("  Latitud:             ")); Serial.print(loraPacket.latitude, 2); Serial.println(F(" deg"));
       Serial.print(F("  Longitud:            ")); Serial.print(loraPacket.longitude, 2); Serial.println(F(" deg"));
 

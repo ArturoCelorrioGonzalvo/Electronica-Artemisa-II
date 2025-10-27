@@ -61,6 +61,7 @@ struct __attribute__((packed)) LoRaPacket {
   uint8_t flight_state;
   float altitude_bar, speed_kmph;
   float roll, pitch, yaw;
+  float acc_x, acc_y, acc_z;
   float latitude, longitude;
 };
 
@@ -251,6 +252,9 @@ void handleTelemetry() {
       loraPacket.roll = flightDataPacket.roll;
       loraPacket.pitch = flightDataPacket.pitch;
       loraPacket.yaw = flightDataPacket.yaw;
+      loraPacket.acc_x = flightDataPacket.acc_x;
+      loraPacket.acc_y = flightDataPacket.acc_y;
+      loraPacket.acc_z = flightDataPacket.acc_z;
       loraPacket.latitude = flightDataPacket.latitude;
       loraPacket.longitude = flightDataPacket.longitude;
       int size = sizeof(loraPacket);
@@ -357,20 +361,12 @@ void initializeSystems(bool (&fallo)[6]) {
 
 void readHighFrequencySensors() {
     flightDataPacket.pressure_hpa = bmp280.readPressure() / 100.0;
-    flightDataPacket.altitude_bar = bmp280.readAltitude(P0); // Usa la función interna para más precisión
+    flightDataPacket.altitude_bar = bmp280.readAltitude(P0); 
     flightDataPacket.temperature = bmp280.readTemperature();
     
     imu_lsm303.read();
     gyroscope.read();
 
-    // const float ACCEL_CONVERSION_FACTOR = 0.1176798;
-    // flightDataPacket.acc_x = imu_lsm303.a.x * ACCEL_CONVERSION_FACTOR;
-    // flightDataPacket.acc_y = imu_lsm303.a.y * ACCEL_CONVERSION_FACTOR;
-    // flightDataPacket.acc_z = imu_lsm303.a.z * ACCEL_CONVERSION_FACTOR;
-    
-    // flightDataPacket.mag_x = imu_lsm303.m.x;
-    // flightDataPacket.mag_y = imu_lsm303.m.y;
-    // flightDataPacket.mag_z = imu_lsm303.m.z;
     flightDataPacket.acc_x = imu_lsm303.a.x;
     flightDataPacket.acc_y = imu_lsm303.a.y;
     flightDataPacket.acc_z = imu_lsm303.a.z;
