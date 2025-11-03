@@ -260,7 +260,13 @@ void handleTelemetry() {
       int size = sizeof(loraPacket);
       //D_PRINTLN(size);
       enviarPaqueteLoRa(&loraPacket, size);
-      D_PRINTLN("Se ha enviado un paquete");
+      //D_PRINTLN("Se ha enviado un paquete");
+      D_PRINT("Acc x:");
+      D_PRINTLN(flightDataPacket.acc_x);
+      D_PRINT("Acc y:");
+      D_PRINTLN(flightDataPacket.acc_y);
+      D_PRINT("Acc z:");
+      D_PRINTLN(flightDataPacket.acc_z);
       //delay(1000);
     #endif
   }
@@ -281,7 +287,7 @@ void initializeSystems(bool (&fallo)[6]) {
     Wire.begin(SDA_PIN, SCL_PIN);
     SPI.begin(SCK, MISO, MOSI);
     
-    delay(1000);
+    //delay(1000);
     D_PRINTLN("Iniciando IMU");
     //D_PRINTLN("Initializing Sensors...");
     //delay(5000);
@@ -296,12 +302,12 @@ void initializeSystems(bool (&fallo)[6]) {
         D_PRINTLN("Aquí el Accel y el Mag se han iniciado");
         imu_lsm303.enableDefault();
         D_PRINTLN("Aquí se usa el .enableDefault");
-        //imu_lsm303.writeAccReg(LSM303::CTRL_REG4_A, 0x38); // Configura Accel a ±16g SOLO PARA EL DLHC TENEMOS EL D
-        imu_lsm303.writeAccReg(0x21, 0x20); // Configura Accel a ±16g 0x20 es 32, que es +-16g
-        D_PRINTLN("Aquí escribimos en el registro 0x21");
+        imu_lsm303.writeAccReg(LSM303::CTRL_REG4_A, 0x38);
+        //imu_lsm303.writeAccReg(0x21, 0x20); // Configura Accel a ±16g 0x20 es 32, que es +-16g
+        //D_PRINTLN("Aquí escribimos en el registro 0x21");
     }
     
-    delay(3000);
+    //delay(3000);
     D_PRINTLN("Iniciando giróscopo");
 
     if (!gyroscope.init(L3G::device_4200D)) { 
@@ -318,7 +324,7 @@ void initializeSystems(bool (&fallo)[6]) {
     }
     
     
-    delay(1000);
+    //delay(1000);
 
     D_PRINTLN("Iniciando barómetro");
     if (!bmp280.begin()) { // La función .begin() de Adafruit no devuelve un int
@@ -332,13 +338,13 @@ void initializeSystems(bool (&fallo)[6]) {
                          Adafruit_BMP280::STANDBY_MS_1);    /* Tiempo de espera */
     }
     
-    delay(1000);
+    //delay(1000);
 
     D_PRINTLN("Initializing Peripherals...");
     D_PRINTLN("Iniciando SD");
     if (!SD.begin(SD_CS, SPI, 4000000, "/sd", 5, true)) { fallo[4] = true; }
 
-    delay(1000);
+    //delay(1000);
 
     D_PRINTLN("Iniciando LoRa");
     int state = radio.begin();
@@ -356,7 +362,7 @@ void initializeSystems(bool (&fallo)[6]) {
         attachInterrupt(digitalPinToInterrupt(LoRa_DI0), onLoRaDio0Interrupt, RISING);
     }
 
-    delay(1000);
+    //delay(1000);
 }
 
 void readHighFrequencySensors() {
@@ -367,9 +373,13 @@ void readHighFrequencySensors() {
     imu_lsm303.read();
     gyroscope.read();
 
-    flightDataPacket.acc_x = imu_lsm303.a.x;
-    flightDataPacket.acc_y = imu_lsm303.a.y;
-    flightDataPacket.acc_z = imu_lsm303.a.z;
+    const float G_TO_MS2 = 9.80665;
+    const float ACCEL_SENSITIVITY_G_PER_LSB = 0.000732;
+
+    // Simplemente multiplicamos el valor crudo por la sensibilidad.
+    flightDataPacket.acc_x = (float)imu_lsm303.a.x * ACCEL_SENSITIVITY_G_PER_LSB * G_TO_MS2;
+    flightDataPacket.acc_y = (float)imu_lsm303.a.y * ACCEL_SENSITIVITY_G_PER_LSB * G_TO_MS2;
+    flightDataPacket.acc_z = (float)imu_lsm303.a.z * ACCEL_SENSITIVITY_G_PER_LSB * G_TO_MS2;
     
     flightDataPacket.mag_x = imu_lsm303.m.x;
     flightDataPacket.mag_y = imu_lsm303.m.y;
