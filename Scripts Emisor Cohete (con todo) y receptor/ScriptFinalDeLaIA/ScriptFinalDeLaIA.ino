@@ -1,3 +1,4 @@
+#include <Arduino.h>
 #include <SD.h>
 #include <Wire.h>
 #include <Adafruit_BMP280.h>
@@ -69,7 +70,7 @@ struct __attribute__((packed)) LoRaPacket {
 enum FlightState {
   DEBUG, ON_PAD, ASCENDING, APOGEE_DEPLOYMENT, MAIN_DEPLOYMENT, LANDED
 };
-FlightState currentState = DEBUG;
+FlightState currentState = ON_PAD;
 
 // --- Instancias de Sensores y Periféricos ---
 L3G gyroscope;
@@ -82,10 +83,10 @@ SX1278 radio = new Module(LoRa_CS, LoRa_DI0, LoRa_RST);
 
 // --- Variables de Lógica de Vuelo ---
 volatile bool loraTxDone = true;
-const float LAUNCH_ACCELERATION_THRESHOLD = 35.0; // m/s^2
+const float LAUNCH_ACCELERATION_THRESHOLD = 15.0; // m/s^2
 const float MAIN_DEPLOYMENT_ALTITUDE = 150.0;     // metros
 float initialAltitude = 0.0;
-float restingAccelerationZ = 0.0;
+float restingAccelerationZ;
 const int APOGEE_DETECTION_WINDOW = 30;
 float altitudeReadings[APOGEE_DETECTION_WINDOW];
 int readingIndex = 0;
@@ -133,6 +134,45 @@ void guardarDatosEnSD(const TelemetryData& packet) {
   archivo.close();
 }
 
+/**
+ * @brief Comprueba si el archivo de datos existe en la SD. Si no,
+ * lo crea y escribe la primera fila con las cabeceras para el CSV.
+ */
+void inicializarArchivoSD() {
+  // Comprobamos si el archivo ya existe
+  if (!SD.exists("/datos.csv")) {
+    D_PRINTLN("El archivo /datos.csv no existe. Creando y escribiendo cabeceras...");
+    
+    // Abrimos el archivo en modo escritura (lo crea si no existe)
+    File archivo = SD.open("/datos.csv", FILE_WRITE);
+    if (archivo) {
+      // Escribimos la fila de cabeceras. Asegúrate de que coincida con guardarDatosEnSD()
+      archivo.println("HDOP;Timestamp (UTC+1);Latitude (deg);Longitude (deg);Speed (km/h);Altitude_GPS (m);Pressure (hPa);Altitude_Baro (m);Temperature (C);Accel_X (m/s^2);Accel_Y (m/s^2);Accel_Z (m/s^2);Gyro_X (raw);Gyro_Y (raw);Gyro_Z (raw);Mag_X (raw);Mag_Y (raw);Mag_Z (raw);Roll (deg);Pitch (deg);Yaw (deg)");
+      archivo.close();
+      D_PRINTLN("✔ Cabeceras escritas correctamente.");
+    } else {
+      D_PRINTLN("❌ Error al crear el archivo /datos.csv");
+    }
+  } else {
+    D_PRINTLN("✔ El archivo /datos.csv ya existe. Se añadirán nuevos datos.");
+  }
+}
+
+void formatSDCard() {
+  #if borrarSD
+    D_PRINTLN("🗑 Eliminando archivos en la microSD...");
+    File root = SD.open("/");
+    File entry;
+    while(entry = root.openNextFile()) {
+      String entryName = entry.name();
+      entry.close();
+      if (!entryName.equals("/System Volume Information")) { SD.remove(entryName); }
+    }
+    D_PRINTLN("✔ Formateo completado.");
+
+  #endif
+}
+
 void enviarPaqueteLoRa(const void* data, size_t size) {
   digitalWrite(SD_CS, HIGH);
   digitalWrite(LoRa_CS, LOW);
@@ -173,28 +213,14 @@ void handleSetupFailure(const bool (&fallo)[6]) {
     }
 }
 
-void formatSDCard() {
-  #if borrarSD
-    D_PRINTLN("🗑 Eliminando archivos en la microSD...");
-    File root = SD.open("/");
-    File entry;
-    while(entry = root.openNextFile()) {
-      String entryName = entry.name();
-      entry.close();
-      if (!entryName.equals("/System Volume Information")) { SD.remove(entryName); }
-    }
-    D_PRINTLN("✔ Formateo completado.");
-  #endif
-}
-
 void runStateMachine() {
   switch (currentState) {
     case ON_PAD:
-      if (restingAccelerationZ == 0.0) {
-        restingAccelerationZ = flightDataPacket.acc_z;
+    restingAccelerationZ = abs(flightDataPacket.acc_z);
+      if (restingAccelerationZ < 10.0) {
         D_PRINT("Calibración en rampa OK. Accel Z: "); D_PRINTLN(restingAccelerationZ);
       }
-      if (flightDataPacket.acc_z - restingAccelerationZ > LAUNCH_ACCELERATION_THRESHOLD) {
+      if (abs(flightDataPacket.acc_z - restingAccelerationZ) > LAUNCH_ACCELERATION_THRESHOLD) {
         D_PRINTLN("¡LANZAMIENTO! -> ASCENDING");
         currentState = ASCENDING;
       }
@@ -206,7 +232,10 @@ void runStateMachine() {
       if (altitudeBufferFull) {
         bool descending = true;
         for (int i = 0; i < APOGEE_DETECTION_WINDOW; i++) {
-          if (flightDataPacket.altitude_bar >= altitudeReadings[i]) { descending = false; break; }
+          if (flightDataPacket.altitude_bar >= altitudeReadings[i]) { 
+            descending = false; 
+            break; 
+          }
         }
         if (descending) {
           D_PRINTLN("¡APOGEO! -> APOGEE_DEPLOYMENT");
@@ -216,17 +245,17 @@ void runStateMachine() {
       break;
     case APOGEE_DEPLOYMENT:
       D_PRINTLN("Activando paracaídas piloto (DROGUE)...");
-      //digitalWrite(DROGUE, HIGH);
-      //delay(1000);
-      //digitalWrite(DROGUE, LOW);
+      digitalWrite(DROGUE, HIGH);
+      delay(5000);
+      digitalWrite(DROGUE, LOW);
       currentState = MAIN_DEPLOYMENT;
       break;
     case MAIN_DEPLOYMENT:
       if (flightDataPacket.altitude_bar <= MAIN_DEPLOYMENT_ALTITUDE) {
         D_PRINTLN("ALTITUD OK -> Desplegando paracaidas principal.");
-        //digitalWrite(PARACAIDAS, HIGH);
-        //delay(1000);
-        //digitalWrite(PARACAIDAS, LOW);
+        digitalWrite(PARACAIDAS, HIGH);
+        delay(5000);
+        digitalWrite(PARACAIDAS, LOW);
         currentState = LANDED;
       }
       break;
@@ -235,6 +264,37 @@ void runStateMachine() {
       break;
     default: // DEBUG
       break;
+  }
+}
+
+void checkSerialCommand() {
+  if (Serial.available() > 0) {
+    String command = Serial.readStringUntil('\n');
+    command.trim(); // Elimina espacios en blanco o retornos de carro
+
+    if (command.startsWith("SET_STATE=")) {
+      String newStateStr = command.substring(10); // Extrae el nombre del estado
+      D_PRINT("Comando serie recibido para cambiar estado a: "); D_PRINTLN(newStateStr);
+
+      if (newStateStr.equalsIgnoreCase("PAD")) {
+        currentState = ON_PAD;
+        D_PRINTLN("Estado cambiado a ON_PAD");
+      } else if (newStateStr.equalsIgnoreCase("ASCENDING")) {
+        currentState = ASCENDING;
+        D_PRINTLN("Estado cambiado a ASCENDING");
+      } else if (newStateStr.equalsIgnoreCase("APOGEE")) {
+        currentState = APOGEE_DEPLOYMENT;
+        D_PRINTLN("Estado cambiado a APOGEE_DEPLOYMENT");
+      } else if (newStateStr.equalsIgnoreCase("MAIN")) {
+        currentState = MAIN_DEPLOYMENT;
+        D_PRINTLN("Estado cambiado a MAIN_DEPLOYMENT");
+      } else if (newStateStr.equalsIgnoreCase("LANDED")) {
+        currentState = LANDED;
+        D_PRINTLN("Estado cambiado a LANDED");
+      } else {
+        D_PRINTLN("Error: Estado no reconocido.");
+      }
+    }
   }
 }
 
@@ -261,12 +321,12 @@ void handleTelemetry() {
       //D_PRINTLN(size);
       enviarPaqueteLoRa(&loraPacket, size);
       //D_PRINTLN("Se ha enviado un paquete");
-      D_PRINT("Acc x:");
-      D_PRINTLN(flightDataPacket.acc_x);
-      D_PRINT("Acc y:");
-      D_PRINTLN(flightDataPacket.acc_y);
-      D_PRINT("Acc z:");
-      D_PRINTLN(flightDataPacket.acc_z);
+      //D_PRINT("Acc x:");
+      //D_PRINTLN(flightDataPacket.acc_x);
+      //D_PRINT("Acc y:");
+      //D_PRINTLN(flightDataPacket.acc_y);
+      //D_PRINT("Acc z:");
+      //D_PRINTLN(flightDataPacket.acc_z);
       //delay(1000);
     #endif
   }
@@ -340,7 +400,7 @@ void initializeSystems(bool (&fallo)[6]) {
     
     //delay(1000);
 
-    D_PRINTLN("Initializing Peripherals...");
+    
     D_PRINTLN("Iniciando SD");
     if (!SD.begin(SD_CS, SPI, 4000000, "/sd", 5, true)) { fallo[4] = true; }
 
@@ -355,9 +415,9 @@ void initializeSystems(bool (&fallo)[6]) {
     else {
         radio.setSpreadingFactor(9);
         radio.setBandwidth(125.0);
-        radio.setCodingRate(6);
+        radio.setCodingRate(6); //La IA recomienda un CR de 4/8 pq es importante no perder información
         radio.setSyncWord(0xAB);
-        radio.setOutputPower(17);
+        radio.setOutputPower(17);//El datasheet del nuevo LoRa pone que la potencia máxima es de 20dB, lo podríamos aumentar
         pinMode(LoRa_DI0, INPUT);
         attachInterrupt(digitalPinToInterrupt(LoRa_DI0), onLoRaDio0Interrupt, RISING);
     }
@@ -405,7 +465,7 @@ void setup() {
       anyFailure = true; 
       D_PRINTLN("HA HABIDO ALGÚN ERROR");
     }
-    D_PRINTLN("Buscando Errores");
+    //D_PRINTLN("Buscando Errores");
   }
   if (anyFailure) handleSetupFailure(fallo);
 
@@ -417,6 +477,7 @@ void setup() {
   
   for (int i = 0; i < APOGEE_DETECTION_WINDOW; i++) { altitudeReadings[i] = -1000.0; }
   formatSDCard();
+  inicializarArchivoSD();
   D_PRINTLN("--- CONFIGURACIÓN FINALIZADA ---");
 
 
@@ -426,6 +487,9 @@ void loop() {
 
     long currentTime = millis();
     if (currentTime - previousHighFreqRead >= highFreqInterval) {
+      #if(DEBUG_MODE)
+        checkSerialCommand();
+      #endif
         previousHighFreqRead = currentTime;
 
         // --- INICIO DEL CICLO DE 100Hz ---
@@ -451,16 +515,17 @@ void loop() {
         flightDataPacket.longitude = gps.location.lng();
         flightDataPacket.speed_kmph = gps.speed.kmph();
         flightDataPacket.hdop = gps.hdop.hdop();
-        flightDataPacket.hour = (gps.time.hour() + 2) % 24;
+        flightDataPacket.hour = (gps.time.hour() + 1) % 24;
         flightDataPacket.minute = gps.time.minute();
         flightDataPacket.second = gps.time.second();
         flightDataPacket.altitude_gps = gps.altitude.meters();
 
         runStateMachine();
+        D_PRINTLN(currentState);
 
       
         //Quito la escritura en la SD porque tengo la lenta
-        //guardarDatosEnSD(flightDataPacket);
+        guardarDatosEnSD(flightDataPacket);
         handleTelemetry();
     }
     //Serial.println(millis()-currentTime); //Serial.print("  Delay: "); Serial.println(currentTime + highFreqInterval - millis());

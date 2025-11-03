@@ -6,7 +6,7 @@ Máquina de estados:
 
  	-Guardar datos en la tarjeta SD
 
-&nbsp;	-Enviar datos
+    -Enviar datos
 
  	-Resto de debugs
 
@@ -50,7 +50,7 @@ Máquina de estados:
 
 * Estado SUBIENDO :
 
- 	-Comprobar si hemos llegado al apogeo (guardando 5 valores de altura y mirando si 	 disminuye)
+ 	-Comprobar si hemos llegado al apogeo (guardando 5 valores de altura y mirando si disminuye)
 
 
 
