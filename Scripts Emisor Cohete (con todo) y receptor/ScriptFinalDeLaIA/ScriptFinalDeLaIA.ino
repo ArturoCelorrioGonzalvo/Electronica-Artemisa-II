@@ -83,7 +83,7 @@ SX1278 radio = new Module(LoRa_CS, LoRa_DI0, LoRa_RST);
 
 // --- Variables de Lógica de Vuelo ---
 volatile bool loraTxDone = true;
-const float LAUNCH_ACCELERATION_THRESHOLD = 15.0; // m/s^2
+const float LAUNCH_ACCELERATION_THRESHOLD = 35.0; // m/s^2
 const float MAIN_DEPLOYMENT_ALTITUDE = 150.0;     // metros
 float initialAltitude = 0.0;
 float restingAccelerationZ;
@@ -216,11 +216,11 @@ void handleSetupFailure(const bool (&fallo)[6]) {
 void runStateMachine() {
   switch (currentState) {
     case ON_PAD:
-    restingAccelerationZ = abs(flightDataPacket.acc_z);
-      if (restingAccelerationZ < 10.0) {
-        D_PRINT("Calibración en rampa OK. Accel Z: "); D_PRINTLN(restingAccelerationZ);
+    restingAccelerationy = abs(flightDataPacket.acc_y);
+      if (restingAccelerationy < 10.0) {
+        D_PRINT("Calibración en rampa OK. Accel y: "); D_PRINTLN(restingAccelerationZ);
       }
-      if (abs(flightDataPacket.acc_z - restingAccelerationZ) > LAUNCH_ACCELERATION_THRESHOLD) {
+      if (abs(flightDataPacket.acc_y - restingAccelerationZ) > LAUNCH_ACCELERATION_THRESHOLD) {
         D_PRINTLN("¡LANZAMIENTO! -> ASCENDING");
         currentState = ASCENDING;
       }
@@ -246,7 +246,7 @@ void runStateMachine() {
     case APOGEE_DEPLOYMENT:
       D_PRINTLN("Activando paracaídas piloto (DROGUE)...");
       digitalWrite(DROGUE, HIGH);
-      delay(5000);
+      delay(10000);
       digitalWrite(DROGUE, LOW);
       currentState = MAIN_DEPLOYMENT;
       break;
@@ -484,15 +484,15 @@ void setup() {
 }
 
 void loop() {
-
+    #if(DEBUG_MODE)
+        checkSerialCommand();
+    #endif
     long currentTime = millis();
     if (currentTime - previousHighFreqRead >= highFreqInterval) {
-      #if(DEBUG_MODE)
-        checkSerialCommand();
-      #endif
+      
         previousHighFreqRead = currentTime;
 
-        // --- INICIO DEL CICLO DE 100Hz ---
+        // --- INICIO DEL CICLO ---
         readHighFrequencySensors();
 
         const float GYRO_SENSITIVITY_TO_DPS = 0.070; // Para L3G a ±2000dps
@@ -520,8 +520,8 @@ void loop() {
         flightDataPacket.second = gps.time.second();
         flightDataPacket.altitude_gps = gps.altitude.meters();
 
-        runStateMachine();
-        D_PRINTLN(currentState);
+       runStateMachine();
+       //D_PRINTLN(currentState);
 
       
         //Quito la escritura en la SD porque tengo la lenta
@@ -532,4 +532,7 @@ void loop() {
     int delayDeseado = currentTime + highFreqInterval - millis();
     delayDeseado = (delayDeseado < 1) ? 1:delayDeseado;
     smartDelay(delayDeseado);
+    //runStateMachine();
+    //D_PRINTLN(currentState);
+    //delay(1000);
 }
