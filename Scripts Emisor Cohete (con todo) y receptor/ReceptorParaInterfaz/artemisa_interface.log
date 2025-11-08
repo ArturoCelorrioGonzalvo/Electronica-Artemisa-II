@@ -1,0 +1,74 @@
+2025-11-07 14:27:34,445 - INFO - Hilo de lectura serie iniciado.
+2025-11-07 14:27:34,445 - ERROR - Error de conexión en COM8. Reintentando... - Detalle: could not open port 'COM8': FileNotFoundError(2, 'El sistema no puede encontrar el archivo especificado.', None, 2)
+2025-11-07 14:29:12,116 - INFO - Hilo de lectura serie iniciado.
+2025-11-07 14:29:12,116 - ERROR - Error de conexión en COM8. Reintentando... - Detalle: could not open port 'COM8': FileNotFoundError(2, 'El sistema no puede encontrar el archivo especificado.', None, 2)
+2025-11-07 14:29:14,226 - ERROR - Error de conexión en COM8. Reintentando... - Detalle: could not open port 'COM8': FileNotFoundError(2, 'El sistema no puede encontrar el archivo especificado.', None, 2)
+2025-11-07 14:30:05,341 - INFO - Archivo de log de telemetría cerrado.
+2025-11-07 14:38:39,495 - INFO - Hilo de lectura serie iniciado.
+2025-11-07 14:38:39,495 - ERROR - Error de conexión en COM8. Reintentando... - Detalle: could not open port 'COM8': FileNotFoundError(2, 'El sistema no puede encontrar el archivo especificado.', None, 2)
+2025-11-07 14:38:41,609 - ERROR - Error de conexión en COM8. Reintentando... - Detalle: could not open port 'COM8': FileNotFoundError(2, 'El sistema no puede encontrar el archivo especificado.', None, 2)
+2025-11-07 14:38:43,611 - ERROR - Error de conexión en COM8. Reintentando... - Detalle: could not open port 'COM8': FileNotFoundError(2, 'El sistema no puede encontrar el archivo especificado.', None, 2)
+2025-11-07 14:38:45,612 - ERROR - Error de conexión en COM8. Reintentando... - Detalle: could not open port 'COM8': FileNotFoundError(2, 'El sistema no puede encontrar el archivo especificado.', None, 2)
+2025-11-07 14:38:47,613 - ERROR - Error de conexión en COM8. Reintentando... - Detalle: could not open port 'COM8': FileNotFoundError(2, 'El sistema no puede encontrar el archivo especificado.', None, 2)
+2025-11-07 14:39:02,229 - ERROR - Error de conexión en COM8. Reintentando... - Detalle: ClearCommError failed (PermissionError(13, 'El dispositivo no reconoce el comando.', None, 22))
+2025-11-07 14:39:17,720 - INFO - Hilo de lectura serie iniciado.
+2025-11-07 14:46:46,978 - INFO - Hilo de lectura serie iniciado.
+2025-11-07 14:47:15,036 - INFO - Hilo de lectura serie iniciado.
+2025-11-07 14:48:20,037 - INFO - Hilo de lectura serie iniciado.
+2025-11-07 14:48:24,817 - INFO - Archivo de log de telemetría cerrado.
+2025-11-07 14:50:14,202 - INFO - Hilo de lectura serie iniciado.
+2025-11-07 14:50:14,202 - INFO - Modo simulación activado. Leyendo desde 'sim_data.txt'.
+2025-11-07 14:50:14,202 - ERROR - No se encontró 'sim_data.txt'.
+2025-11-07 14:50:46,930 - INFO - Hilo de lectura serie iniciado.
+2025-11-07 14:52:09,134 - INFO - Hilo de lectura serie iniciado.
+2025-11-07 14:52:31,513 - WARNING - Línea de datos mal formada: 'CRC_ERROR' - Error: not enough values to unpack (expected 2, got 1)
+2025-11-07 14:53:03,787 - WARNING - Línea de datos mal formada: 'CRC_ERROR' - Error: not enough values to unpack (expected 2, got 1)
+2025-11-07 14:53:24,144 - INFO - Hilo de lectura serie iniciado.
+2025-11-07 14:54:23,243 - INFO - Hilo de lectura serie iniciado.
+2025-11-07 14:54:23,453 - WARNING - Línea de datos mal formada: '00000' - Error: not enough values to unpack (expected 2, got 1)
+2025-11-07 14:57:35,699 - INFO - Hilo de lectura serie iniciado.
+2025-11-07 14:57:35,699 - INFO - Modo simulación activado. Leyendo desde 'sim_data.txt'.
+2025-11-07 14:57:35,699 - ERROR - No se encontró 'sim_data.txt'.
+2025-11-07 14:57:50,594 - INFO - Hilo de lectura serie iniciado.
+2025-11-07 14:58:27,708 - INFO - Archivo de log de telemetría cerrado.
+2025-11-08 16:48:42,301 - INFO - Hilo de lectura serie iniciado.
+2025-11-08 16:49:34,355 - INFO - Archivo de log de telemetría cerrado.
+2025-11-08 17:24:31,916 - INFO - Hilo de lectura serie iniciado.
+2025-11-08 17:24:31,916 - ERROR - Error de conexión en COM8. Reintentando... - Detalle: could not open port 'COM8': FileNotFoundError(2, 'El sistema no puede encontrar el archivo especificado.', None, 2)
+2025-11-08 17:24:34,033 - ERROR - Error de conexión en COM8. Reintentando... - Detalle: could not open port 'COM8': FileNotFoundError(2, 'El sistema no puede encontrar el archivo especificado.', None, 2)
+2025-11-08 17:24:36,035 - ERROR - Error de conexión en COM8. Reintentando... - Detalle: could not open port 'COM8': FileNotFoundError(2, 'El sistema no puede encontrar el archivo especificado.', None, 2)
+2025-11-08 17:24:38,036 - ERROR - Error de conexión en COM8. Reintentando... - Detalle: could not open port 'COM8': FileNotFoundError(2, 'El sistema no puede encontrar el archivo especificado.', None, 2)
+2025-11-08 17:24:40,036 - ERROR - Error de conexión en COM8. Reintentando... - Detalle: could not open port 'COM8': FileNotFoundError(2, 'El sistema no puede encontrar el archivo especificado.', None, 2)
+2025-11-08 17:24:42,037 - ERROR - Error de conexión en COM8. Reintentando... - Detalle: could not open port 'COM8': FileNotFoundError(2, 'El sistema no puede encontrar el archivo especificado.', None, 2)
+2025-11-08 17:24:53,763 - ERROR - Error de conexión en COM8. Reintentando... - Detalle: could not open port 'COM8': FileNotFoundError(2, 'El sistema no puede encontrar el archivo especificado.', None, 2)
+2025-11-08 17:24:55,764 - ERROR - Error de conexión en COM8. Reintentando... - Detalle: could not open port 'COM8': FileNotFoundError(2, 'El sistema no puede encontrar el archivo especificado.', None, 2)
+2025-11-08 17:24:57,765 - ERROR - Error de conexión en COM8. Reintentando... - Detalle: could not open port 'COM8': FileNotFoundError(2, 'El sistema no puede encontrar el archivo especificado.', None, 2)
+2025-11-08 17:24:59,766 - ERROR - Error de conexión en COM8. Reintentando... - Detalle: could not open port 'COM8': FileNotFoundError(2, 'El sistema no puede encontrar el archivo especificado.', None, 2)
+2025-11-08 17:25:01,768 - ERROR - Error de conexión en COM8. Reintentando... - Detalle: could not open port 'COM8': FileNotFoundError(2, 'El sistema no puede encontrar el archivo especificado.', None, 2)
+2025-11-08 17:25:03,769 - ERROR - Error de conexión en COM8. Reintentando... - Detalle: could not open port 'COM8': FileNotFoundError(2, 'El sistema no puede encontrar el archivo especificado.', None, 2)
+2025-11-08 17:25:05,770 - ERROR - Error de conexión en COM8. Reintentando... - Detalle: could not open port 'COM8': FileNotFoundError(2, 'El sistema no puede encontrar el archivo especificado.', None, 2)
+2025-11-08 17:25:07,770 - ERROR - Error de conexión en COM8. Reintentando... - Detalle: could not open port 'COM8': FileNotFoundError(2, 'El sistema no puede encontrar el archivo especificado.', None, 2)
+2025-11-08 17:25:09,771 - ERROR - Error de conexión en COM8. Reintentando... - Detalle: could not open port 'COM8': FileNotFoundError(2, 'El sistema no puede encontrar el archivo especificado.', None, 2)
+2025-11-08 17:25:11,773 - ERROR - Error de conexión en COM8. Reintentando... - Detalle: could not open port 'COM8': FileNotFoundError(2, 'El sistema no puede encontrar el archivo especificado.', None, 2)
+2025-11-08 17:25:13,774 - ERROR - Error de conexión en COM8. Reintentando... - Detalle: could not open port 'COM8': FileNotFoundError(2, 'El sistema no puede encontrar el archivo especificado.', None, 2)
+2025-11-08 17:25:15,774 - ERROR - Error de conexión en COM8. Reintentando... - Detalle: could not open port 'COM8': FileNotFoundError(2, 'El sistema no puede encontrar el archivo especificado.', None, 2)
+2025-11-08 17:25:17,775 - ERROR - Error de conexión en COM8. Reintentando... - Detalle: could not open port 'COM8': FileNotFoundError(2, 'El sistema no puede encontrar el archivo especificado.', None, 2)
+2025-11-08 17:25:19,776 - ERROR - Error de conexión en COM8. Reintentando... - Detalle: could not open port 'COM8': FileNotFoundError(2, 'El sistema no puede encontrar el archivo especificado.', None, 2)
+2025-11-08 17:25:21,777 - ERROR - Error de conexión en COM8. Reintentando... - Detalle: could not open port 'COM8': FileNotFoundError(2, 'El sistema no puede encontrar el archivo especificado.', None, 2)
+2025-11-08 17:25:23,779 - ERROR - Error de conexión en COM8. Reintentando... - Detalle: could not open port 'COM8': FileNotFoundError(2, 'El sistema no puede encontrar el archivo especificado.', None, 2)
+2025-11-08 17:25:25,779 - ERROR - Error de conexión en COM8. Reintentando... - Detalle: could not open port 'COM8': FileNotFoundError(2, 'El sistema no puede encontrar el archivo especificado.', None, 2)
+2025-11-08 17:25:27,781 - ERROR - Error de conexión en COM8. Reintentando... - Detalle: could not open port 'COM8': FileNotFoundError(2, 'El sistema no puede encontrar el archivo especificado.', None, 2)
+2025-11-08 17:25:29,782 - ERROR - Error de conexión en COM8. Reintentando... - Detalle: could not open port 'COM8': FileNotFoundError(2, 'El sistema no puede encontrar el archivo especificado.', None, 2)
+2025-11-08 17:25:31,783 - ERROR - Error de conexión en COM8. Reintentando... - Detalle: could not open port 'COM8': FileNotFoundError(2, 'El sistema no puede encontrar el archivo especificado.', None, 2)
+2025-11-08 17:25:33,784 - ERROR - Error de conexión en COM8. Reintentando... - Detalle: could not open port 'COM8': FileNotFoundError(2, 'El sistema no puede encontrar el archivo especificado.', None, 2)
+2025-11-08 17:25:35,785 - ERROR - Error de conexión en COM8. Reintentando... - Detalle: could not open port 'COM8': FileNotFoundError(2, 'El sistema no puede encontrar el archivo especificado.', None, 2)
+2025-11-08 17:25:37,787 - ERROR - Error de conexión en COM8. Reintentando... - Detalle: could not open port 'COM8': FileNotFoundError(2, 'El sistema no puede encontrar el archivo especificado.', None, 2)
+2025-11-08 17:25:39,787 - ERROR - Error de conexión en COM8. Reintentando... - Detalle: could not open port 'COM8': FileNotFoundError(2, 'El sistema no puede encontrar el archivo especificado.', None, 2)
+2025-11-08 17:25:41,788 - ERROR - Error de conexión en COM8. Reintentando... - Detalle: could not open port 'COM8': FileNotFoundError(2, 'El sistema no puede encontrar el archivo especificado.', None, 2)
+2025-11-08 17:25:43,789 - ERROR - Error de conexión en COM8. Reintentando... - Detalle: could not open port 'COM8': FileNotFoundError(2, 'El sistema no puede encontrar el archivo especificado.', None, 2)
+2025-11-08 17:25:45,790 - ERROR - Error de conexión en COM8. Reintentando... - Detalle: could not open port 'COM8': FileNotFoundError(2, 'El sistema no puede encontrar el archivo especificado.', None, 2)
+2025-11-08 17:25:47,792 - ERROR - Error de conexión en COM8. Reintentando... - Detalle: could not open port 'COM8': FileNotFoundError(2, 'El sistema no puede encontrar el archivo especificado.', None, 2)
+2025-11-08 17:25:49,792 - ERROR - Error de conexión en COM8. Reintentando... - Detalle: could not open port 'COM8': FileNotFoundError(2, 'El sistema no puede encontrar el archivo especificado.', None, 2)
+2025-11-08 17:25:51,793 - ERROR - Error de conexión en COM8. Reintentando... - Detalle: could not open port 'COM8': FileNotFoundError(2, 'El sistema no puede encontrar el archivo especificado.', None, 2)
+2025-11-08 17:25:53,794 - ERROR - Error de conexión en COM8. Reintentando... - Detalle: could not open port 'COM8': FileNotFoundError(2, 'El sistema no puede encontrar el archivo especificado.', None, 2)
+2025-11-08 17:25:55,795 - ERROR - Error de conexión en COM8. Reintentando... - Detalle: could not open port 'COM8': FileNotFoundError(2, 'El sistema no puede encontrar el archivo especificado.', None, 2)

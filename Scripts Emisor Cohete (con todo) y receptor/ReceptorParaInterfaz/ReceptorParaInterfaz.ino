@@ -104,36 +104,28 @@ void loop() {
     // --- LECTURA ACTUALIZADA ---
     // Leemos los datos en nuestro nuevo struct 'loraPacket'
     int state = radio.readData((byte*)&loraPacket, sizeof(loraPacket));
-    Serial.println(state);
-    Serial.println(sizeof(loraPacket));
+
     if (state == RADIOLIB_ERR_NONE) {
-      // --- SECCIÓN DE IMPRESIÓN REESCRITA ---
-      Serial.println();
-      Serial.println(F("--- Paquete de Telemetría Recibido ---"));
-      
-      // Imprimimos los campos del nuevo LoRaPacket
-      Serial.print(F("  Estado de Vuelo:     ")); Serial.println(getStateString(loraPacket.flight_state));
-      Serial.print(F("  Altitud Barométrica: ")); Serial.print(loraPacket.altitude_bar, 2); Serial.println(F(" m"));
-      Serial.print(F("  Velocidad GPS:       ")); Serial.print(loraPacket.speed_kmph, 2); Serial.println(F(" km/h"));
-      Serial.print(F("  Roll:                ")); Serial.print(loraPacket.roll, 2); Serial.println(F(" deg"));
-      Serial.print(F("  Pitch:               ")); Serial.print(loraPacket.pitch, 2); Serial.println(F(" deg"));
-      Serial.print(F("  Yaw:                 ")); Serial.print(loraPacket.yaw, 2); Serial.println(F(" deg"));
-      Serial.print(F("  Acc X:               ")); Serial.print(loraPacket.acc_x, 2); Serial.println(F(" m/s^2"));
-      Serial.print(F("  Acc Y:               ")); Serial.print(loraPacket.acc_y, 2); Serial.println(F(" m/s^2"));
-      Serial.print(F("  Acc Z:               ")); Serial.print(loraPacket.acc_z, 2); Serial.println(F(" m/s^2"));
-      Serial.print(F("  Latitud:             ")); Serial.print(loraPacket.latitude, 2); Serial.println(F(" deg"));
-      Serial.print(F("  Longitud:            ")); Serial.print(loraPacket.longitude, 2); Serial.println(F(" deg"));
+    // --- NUEVO FORMATO DE SALIDA PARA PYTHON ---
+    // Enviamos una sola línea con todos los datos, fácil de parsear.
+    // Ejemplo: STATE:3,ALT:450.21,SPD:320.50,ROLL:5.2,PITCH:-2.1,YAW:120.3,LAT:40.1234,LON:-3.4321
+    
+    Serial.print("STATE:");  Serial.print(loraPacket.flight_state);
+    Serial.print(",ALT:");   Serial.print(loraPacket.altitude_bar, 2);
+    Serial.print(",SPD:");   Serial.print(loraPacket.speed_kmph, 2);
+    Serial.print(",ACC_X:"); Serial.print(loraPacket.acc_x, 2);
+    Serial.print(",ROLL:");  Serial.print(loraPacket.roll, 2);
+    Serial.print(",PITCH:"); Serial.print(loraPacket.pitch, 2);
+    Serial.print(",YAW:");   Serial.print(loraPacket.yaw, 2);
+    Serial.print(",LAT:");   Serial.print(loraPacket.latitude, 6);
+    Serial.print(",LON:");   Serial.print(loraPacket.longitude, 6);
+    Serial.println(); // Importante: termina la línea para que Python sepa que el paquete ha terminado
 
-      // La información de la señal sigue siendo muy útil
-      Serial.print(F("  RSSI:                ")); Serial.print(radio.getRSSI()); Serial.println(F(" dBm"));
-      Serial.print(F("  SNR:                 ")); Serial.print(radio.getSNR()); Serial.println(F(" dB"));
-      Serial.println(F("--------------------------------------"));
+  } else if (state == RADIOLIB_ERR_CRC_MISMATCH) {
+    Serial.println("CRC_ERROR"); // Enviamos un mensaje de error simple
+  }
 
-    } else if (state == RADIOLIB_ERR_CRC_MISMATCH) {
-      Serial.println(F("Error de CRC, paquete corrupto descartado."));
-    }
-
-    // Volvemos a poner el LoRa en modo de recepción
-    radio.startReceive();
+  // Volvemos a poner el LoRa en modo de recepción
+  radio.startReceive();
   }
 }

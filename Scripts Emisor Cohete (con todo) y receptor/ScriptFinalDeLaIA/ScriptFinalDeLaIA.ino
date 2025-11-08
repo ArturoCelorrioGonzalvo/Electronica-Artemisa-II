@@ -15,6 +15,7 @@
 #define P0 1013.25
 #define borrarSD true
 #define DEBUG_MODE true
+#define TEST_MODE false
 #define debugLoRa false
 
 // --- Pines ---
@@ -86,15 +87,35 @@ volatile bool loraTxDone = true;
 const float LAUNCH_ACCELERATION_THRESHOLD = 35.0; // m/s^2
 const float MAIN_DEPLOYMENT_ALTITUDE = 150.0;     // metros
 float initialAltitude = 0.0;
-float restingAccelerationZ;
+float restingAccelerationY;
 const int APOGEE_DETECTION_WINDOW = 30;
 float altitudeReadings[APOGEE_DETECTION_WINDOW];
 int readingIndex = 0;
 bool altitudeBufferFull = false;
 
+// --- Variables y Constantes para el Buzzer de Recuperación ---
+const int BEEP_FREQUENCY = 2730;          // Frecuencia del pitido en Hz
+const long BEEP_DURATION = 200;           // Duración del pitido en ms
+const long BEEP_PAUSE = 150;              // Pausa entre pitidos en ms
+const long SERIES_PAUSE = 2500;           // Pausa larga entre series de pitidos
+unsigned long previousBuzzerMillis = 0;   // Para temporizar el patrón del buzzer
+int buzzerState = 0;                      // Máquina de estados para el patrón del buzzer (0 a 5)
+
 // --- Temporizador para el Loop de Alta Frecuencia ---
 const long highFreqInterval = 25; // 25ms = 40Hz
 long previousHighFreqRead = 0;
+
+const char* getStateString(uint8_t state) {
+  switch (state) {
+    case DEBUG:             return "DEBUG";
+    case ON_PAD:            return "ON PAD (Ready)";
+    case ASCENDING:         return "ASCENDING";
+    case APOGEE_DEPLOYMENT: return "DROGUE DEPLOY";
+    case MAIN_DEPLOYMENT:   return "MAIN DEPLOY";
+    case LANDED:            return "LANDED (Recovery)";
+    default:                return "DEBUG";
+  }
+}
 
 void IRAM_ATTR onLoRaDio0Interrupt() {
   loraTxDone = true;
@@ -215,12 +236,14 @@ void handleSetupFailure(const bool (&fallo)[6]) {
 
 void runStateMachine() {
   switch (currentState) {
+    case DEBUG:
+      break;
     case ON_PAD:
-    restingAccelerationy = abs(flightDataPacket.acc_y);
-      if (restingAccelerationy < 10.0) {
-        D_PRINT("Calibración en rampa OK. Accel y: "); D_PRINTLN(restingAccelerationZ);
+      restingAccelerationY = abs(flightDataPacket.acc_y);
+      if (restingAccelerationY < 10.0) {
+      D_PRINT("Calibración en rampa OK. Accel y: "); D_PRINTLN(restingAccelerationY);
       }
-      if (abs(flightDataPacket.acc_y - restingAccelerationZ) > LAUNCH_ACCELERATION_THRESHOLD) {
+      if (abs(flightDataPacket.acc_y - restingAccelerationY) > LAUNCH_ACCELERATION_THRESHOLD) {
         D_PRINTLN("¡LANZAMIENTO! -> ASCENDING");
         currentState = ASCENDING;
       }
@@ -259,10 +282,64 @@ void runStateMachine() {
         currentState = LANDED;
       }
       break;
-    case LANDED: // BUZZER, etc.
+    case LANDED:
+      // --- Lógica del Buzzer de Recuperación (no bloqueante) ---
+      unsigned long currentMillis = millis();
 
+      // Esta máquina de estados interna controla el patrón de pitidos.
+      // Se ejecuta repetidamente pero solo actúa cuando ha pasado el tiempo necesario.
+      switch (buzzerState) {
+        case 0: // BEEP 1
+          if (currentMillis - previousBuzzerMillis >= SERIES_PAUSE) {
+            tone(BUZZER, BEEP_FREQUENCY); // Inicia el primer pitido
+            previousBuzzerMillis = currentMillis;
+            buzzerState = 1;
+          }
+          break;
+
+        case 1: // Pausa 1
+          if (currentMillis - previousBuzzerMillis >= BEEP_DURATION) {
+            noTone(BUZZER); // Apaga el buzzer
+            previousBuzzerMillis = currentMillis;
+            buzzerState = 2;
+          }
+          break;
+
+        case 2: // BEEP 2
+          if (currentMillis - previousBuzzerMillis >= BEEP_PAUSE) {
+            tone(BUZZER, BEEP_FREQUENCY); // Inicia el segundo pitido
+            previousBuzzerMillis = currentMillis;
+            buzzerState = 3;
+          }
+          break;
+
+        case 3: // Pausa 2
+          if (currentMillis - previousBuzzerMillis >= BEEP_DURATION) {
+            noTone(BUZZER); // Apaga el buzzer
+            previousBuzzerMillis = currentMillis;
+            buzzerState = 4;
+          }
+          break;
+
+        case 4: // BEEP 3
+          if (currentMillis - previousBuzzerMillis >= BEEP_PAUSE) {
+            tone(BUZZER, BEEP_FREQUENCY); // Inicia el tercer pitido
+            previousBuzzerMillis = currentMillis;
+            buzzerState = 5;
+          }
+          break;
+
+        case 5: // Pausa larga antes de repetir
+          if (currentMillis - previousBuzzerMillis >= BEEP_DURATION) {
+            noTone(BUZZER); // Apaga el buzzer
+            previousBuzzerMillis = currentMillis;
+            buzzerState = 0; // Vuelve al estado inicial para esperar la pausa larga
+          }
+          break;
+      }
       break;
-    default: // DEBUG
+    default: 
+      D_PRINTLN("");
       break;
   }
 }
@@ -373,8 +450,7 @@ void initializeSystems(bool (&fallo)[6]) {
     if (!gyroscope.init(L3G::device_4200D)) { 
       fallo[1] = true;
     }
-    else {
-      
+    else {      
         gyroscope.enableDefault();
         D_PRINTLN("Giroscopo bien");
         // --- CORRECCIÓN PARA EL GIROSCOPIO ---
@@ -387,12 +463,12 @@ void initializeSystems(bool (&fallo)[6]) {
     //delay(1000);
 
     D_PRINTLN("Iniciando barómetro");
-    if (!bmp280.begin()) { // La función .begin() de Adafruit no devuelve un int
+    if (!bmp280.begin()) {
         fallo[3] = true;
     } else {
         // Configura el barómetro para reducir ruido (hacer "media")
         bmp280.setSampling(Adafruit_BMP280::MODE_NORMAL,     /* Modo de operación */
-                         Adafruit_BMP280::SAMPLING_X4,      /* Sobremuestreo de Temp. */
+                         Adafruit_BMP280::SAMPLING_X4,      /* Sobremuestreo de Temp. */ //Podríamos llegar a x16, pero no nos importa demasiado
                          Adafruit_BMP280::SAMPLING_X16,     /* Sobremuestreo de Presión */
                          Adafruit_BMP280::FILTER_X16,       /* Coeficiente del Filtro */
                          Adafruit_BMP280::STANDBY_MS_1);    /* Tiempo de espera */
@@ -415,9 +491,9 @@ void initializeSystems(bool (&fallo)[6]) {
     else {
         radio.setSpreadingFactor(9);
         radio.setBandwidth(125.0);
-        radio.setCodingRate(6); //La IA recomienda un CR de 4/8 pq es importante no perder información
+        radio.setCodingRate(6);
         radio.setSyncWord(0xAB);
-        radio.setOutputPower(17);//El datasheet del nuevo LoRa pone que la potencia máxima es de 20dB, lo podríamos aumentar
+        radio.setOutputPower(17);//Ya tenemos la potencia máxima en EU, no se puede más de 17dBm
         pinMode(LoRa_DI0, INPUT);
         attachInterrupt(digitalPinToInterrupt(LoRa_DI0), onLoRaDio0Interrupt, RISING);
     }
@@ -484,7 +560,7 @@ void setup() {
 }
 
 void loop() {
-    #if(DEBUG_MODE)
+    #if(TEST_MODE)
         checkSerialCommand();
     #endif
     long currentTime = millis();
@@ -520,12 +596,22 @@ void loop() {
         flightDataPacket.second = gps.time.second();
         flightDataPacket.altitude_gps = gps.altitude.meters();
 
-       runStateMachine();
-       //D_PRINTLN(currentState);
+        D_PRINT(flightDataPacket.hour);
+        D_PRINT(":");
+        D_PRINT(flightDataPacket.minute);
+        D_PRINT(":");
+        D_PRINT(flightDataPacket.second);
+        D_PRINT(";Lat");
+        D_PRINT(flightDataPacket.latitude);
+        D_PRINT(";Long");
+        D_PRINT(flightDataPacket.longitude);
+
+        //runStateMachine();
+       //D_PRINTLN(getStateString(loraPacket.flight_state));
 
       
         //Quito la escritura en la SD porque tengo la lenta
-        guardarDatosEnSD(flightDataPacket);
+        //guardarDatosEnSD(flightDataPacket);
         handleTelemetry();
     }
     //Serial.println(millis()-currentTime); //Serial.print("  Delay: "); Serial.println(currentTime + highFreqInterval - millis());
